@@ -1,0 +1,188 @@
+"use client"
+
+import { cn } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Input } from "@/components/ui/input"
+import {
+  Phone,
+  MessageSquare,
+  Mail,
+  MessageCircle,
+  Clock,
+  AlertTriangle,
+  Search,
+  ThumbsUp,
+  ThumbsDown,
+  Minus,
+} from "lucide-react"
+import type { Conversation } from "@/lib/sample-data"
+
+const channelIcons = {
+  voice: Phone,
+  chat: MessageSquare,
+  email: Mail,
+  whatsapp: MessageCircle,
+}
+
+const channelColors = {
+  voice: "bg-blue-500",
+  chat: "bg-emerald-500",
+  email: "bg-amber-500",
+  whatsapp: "bg-green-500",
+}
+
+const sentimentIcons = {
+  positive: ThumbsUp,
+  neutral: Minus,
+  negative: ThumbsDown,
+}
+
+const sentimentColors = {
+  positive: "text-emerald-500",
+  neutral: "text-blue-500",
+  negative: "text-red-500",
+}
+
+interface ConversationListProps {
+  conversations: Conversation[]
+  selectedId?: string
+  onSelect: (conversation: Conversation) => void
+}
+
+export function ConversationList({ conversations, selectedId, onSelect }: ConversationListProps) {
+  const formatTime = (date: Date) => {
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const minutes = Math.floor(diff / 60000)
+
+    if (minutes < 60) return `${minutes}m ago`
+    if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`
+    return date.toLocaleDateString()
+  }
+
+  return (
+    <div className="w-80 border-r border-border bg-card flex flex-col h-full">
+      {/* Search */}
+      <div className="p-4 border-b border-border">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Search conversations..." className="pl-9 bg-muted/50 border-0" />
+        </div>
+      </div>
+
+      {/* Conversation List */}
+      <div className="flex-1 overflow-y-auto">
+        {conversations.map((conversation) => {
+          const ChannelIcon = channelIcons[conversation.channel]
+          const SentimentIcon = sentimentIcons[conversation.sentiment]
+
+          return (
+            <button
+              key={conversation.id}
+              onClick={() => onSelect(conversation)}
+              className={cn(
+                "w-full text-left p-4 border-b border-border hover:bg-muted/50 transition-colors",
+                selectedId === conversation.id && "bg-muted",
+              )}
+            >
+              <div className="flex items-start gap-3">
+                {/* Avatar with channel indicator */}
+                <div className="relative">
+                  <Avatar className="h-10 w-10">
+                    <AvatarImage
+                      src={conversation.customer.avatar || "/placeholder.svg"}
+                      alt={conversation.customer.name}
+                    />
+                    <AvatarFallback>
+                      {conversation.customer.name
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div
+                    className={cn(
+                      "absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center",
+                      channelColors[conversation.channel],
+                    )}
+                  >
+                    <ChannelIcon className="h-2.5 w-2.5 text-white" />
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <span className="font-medium text-sm truncate">{conversation.customer.name}</span>
+                    <span className="text-xs text-muted-foreground whitespace-nowrap">
+                      {formatTime(conversation.lastMessageTime)}
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-muted-foreground truncate mb-2">{conversation.lastMessage}</p>
+
+                  {/* Badges */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {/* SLA Badge */}
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-[10px] px-1.5 py-0 gap-1",
+                        conversation.sla.status === "healthy" &&
+                          "bg-emerald-500/10 text-emerald-600 border-emerald-200",
+                        conversation.sla.status === "warning" && "bg-amber-500/10 text-amber-600 border-amber-200",
+                        conversation.sla.status === "breached" && "bg-red-500/10 text-red-600 border-red-200",
+                      )}
+                    >
+                      <Clock className="h-2.5 w-2.5" />
+                      {conversation.sla.remaining > 0 ? `${conversation.sla.remaining}m` : "Breached"}
+                    </Badge>
+
+                    {/* Sentiment Badge */}
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-1">
+                      <SentimentIcon className={cn("h-2.5 w-2.5", sentimentColors[conversation.sentiment])} />
+                    </Badge>
+
+                    {/* Escalation Risk */}
+                    {conversation.escalationRisk && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1.5 py-0 gap-1 bg-red-500/10 text-red-600 border-red-200"
+                      >
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        Risk
+                      </Badge>
+                    )}
+
+                    {/* Language Badge (if not English) */}
+                    {conversation.customer.preferredLanguage !== "en" && (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 uppercase">
+                        {conversation.customer.preferredLanguage}
+                      </Badge>
+                    )}
+
+                    {/* Priority Badge */}
+                    {(conversation.priority === "urgent" || conversation.priority === "high") && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-[10px] px-1.5 py-0 capitalize",
+                          conversation.priority === "urgent"
+                            ? "bg-red-500/10 text-red-600 border-red-200"
+                            : "bg-orange-500/10 text-orange-600 border-orange-200",
+                        )}
+                      >
+                        {conversation.priority}
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
