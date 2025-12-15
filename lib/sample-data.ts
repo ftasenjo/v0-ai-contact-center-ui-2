@@ -423,3 +423,39 @@ export const knowledgeBaseSuggestions = [
     relevance: 0.82,
   },
 ]
+
+// Export industry-specific demo data
+export {
+  healthcareConversations,
+  ecommerceConversations,
+  bankingConversations,
+  saasConversations,
+  allIndustryConversations,
+  industryAgents,
+} from './industry-demo-data'
+
+// Industry types
+export type Industry = 'healthcare' | 'ecommerce' | 'banking' | 'saas'
+
+// Get conversations by industry
+export function getConversationsByIndustry(industry: Industry): Conversation[] {
+  const {
+    healthcareConversations,
+    ecommerceConversations,
+    bankingConversations,
+    saasConversations,
+  } = require('./industry-demo-data')
+
+  switch (industry) {
+    case 'healthcare':
+      return healthcareConversations
+    case 'ecommerce':
+      return ecommerceConversations
+    case 'banking':
+      return bankingConversations
+    case 'saas':
+      return saasConversations
+    default:
+      return healthcareConversations
+  }
+}

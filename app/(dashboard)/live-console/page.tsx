@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -27,93 +27,86 @@ import { LiveCallCard } from "@/components/live-console/live-call-card"
 import { TranscriptPanel } from "@/components/live-console/transcript-panel"
 import { WaveformVisualizer } from "@/components/live-console/waveform-visualizer"
 
-const liveCallsData = [
-  {
-    id: "call-001",
-    agent: {
-      id: "agent-001",
-      name: "Sarah Chen",
-      avatar: "/professional-woman-sarah-agent.jpg",
-      status: "on-call",
-    },
-    customer: {
-      name: "Emily Richardson",
-      company: "TechCorp Inc.",
-      tier: "enterprise",
-    },
-    duration: "12:34",
-    sentiment: "negative",
-    sentimentScore: 0.25,
-    topic: "Service Outage",
-    riskFlags: ["escalation-risk", "sla-warning"],
-    queue: "Enterprise Support",
-  },
-  {
-    id: "call-002",
-    agent: {
-      id: "agent-002",
-      name: "David Park",
-      avatar: "/professional-man-david-agent.jpg",
-      status: "on-call",
-    },
-    customer: {
-      name: "Marcus Johnson",
-      company: "Retail Co.",
-      tier: "premium",
-    },
-    duration: "05:21",
-    sentiment: "neutral",
-    sentimentScore: 0.55,
-    topic: "Pricing Inquiry",
-    riskFlags: [],
-    queue: "Sales Support",
-  },
-  {
-    id: "call-003",
-    agent: {
-      id: "agent-003",
-      name: "Maria Garcia",
-      avatar: "/professional-woman-maria-agent.jpg",
-      status: "on-call",
-    },
-    customer: {
-      name: "James Chen",
-      company: "Finance Ltd.",
-      tier: "enterprise",
-    },
-    duration: "18:45",
-    sentiment: "negative",
-    sentimentScore: 0.18,
-    topic: "Billing Dispute",
-    riskFlags: ["escalation-risk", "sla-breached", "vip-customer"],
-    queue: "Billing",
-  },
-  {
-    id: "call-004",
-    agent: {
-      id: "agent-004",
-      name: "Alex Thompson",
-      avatar: "/professional-person-alex-agent.jpg",
-      status: "on-call",
-    },
-    customer: {
-      name: "Rachel Thompson",
-      company: "Creative Agency",
-      tier: "premium",
-    },
-    duration: "03:12",
-    sentiment: "positive",
-    sentimentScore: 0.78,
-    topic: "API Integration",
-    riskFlags: [],
-    queue: "Technical Support",
-  },
-]
+interface LiveCall {
+  id: string;
+  callSid: string;
+  agent: {
+    id: string;
+    name: string;
+    avatar: string;
+    status: string;
+  };
+  customer: {
+    name: string;
+    company: string;
+    tier: string;
+  };
+  duration: string;
+  sentiment: string;
+  sentimentScore: number;
+  topic: string;
+  riskFlags: string[];
+  queue: string;
+  from: string;
+  to: string;
+  status: string;
+  startTime: Date;
+}
 
 export default function LiveConsolePage() {
-  const [selectedCall, setSelectedCall] = useState(liveCallsData[0])
-  const [searchQuery, setSearchQuery] = useState("")
-  const [isWhispering, setIsWhispering] = useState(false)
+  const [liveCallsData, setLiveCallsData] = useState<LiveCall[]>([]);
+  const [selectedCall, setSelectedCall] = useState<LiveCall | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isWhispering, setIsWhispering] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fetch active calls from API
+  useEffect(() => {
+    const fetchActiveCalls = async () => {
+      try {
+        const response = await fetch('/api/calls/active');
+        const data = await response.json();
+        
+        if (data.success) {
+          // Only show real calls - no demo data
+          setLiveCallsData(data.calls || []);
+          
+          // Update selected call
+          if (data.calls && data.calls.length > 0) {
+            if (!selectedCall || !data.calls.find((c: LiveCall) => c.id === selectedCall.id)) {
+              setSelectedCall(data.calls[0]);
+            } else {
+              // Update existing selected call
+              const updated = data.calls.find((c: LiveCall) => c.id === selectedCall.id);
+              if (updated) setSelectedCall(updated);
+            }
+          } else {
+            // No active calls - clear selection
+            setSelectedCall(null);
+          }
+        } else {
+          // No calls or error - show empty
+          setLiveCallsData([]);
+          setSelectedCall(null);
+        }
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Error fetching active calls:', error);
+        // On error, show empty state - no demo data
+        setLiveCallsData([]);
+        setSelectedCall(null);
+        setIsLoading(false);
+      }
+    };
+
+    // Initial fetch
+    fetchActiveCalls();
+
+    // Poll for updates every 2 seconds for real-time feel
+    const interval = setInterval(fetchActiveCalls, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   const filteredCalls = liveCallsData.filter(
     (call) =>
@@ -124,10 +117,24 @@ export default function LiveConsolePage() {
 
   const stats = {
     activeCalls: liveCallsData.length,
-    avgDuration: "8:23",
+    avgDuration: "8:23", // TODO: Calculate from real data
     negativeSentiment: liveCallsData.filter((c) => c.sentiment === "negative").length,
     atRisk: liveCallsData.filter((c) => c.riskFlags.length > 0).length,
   }
+
+  // Update selected call when data changes
+  useEffect(() => {
+    if (selectedCall && liveCallsData.length > 0) {
+      const updated = liveCallsData.find(c => c.id === selectedCall.id);
+      if (updated) {
+        setSelectedCall(updated);
+      } else if (liveCallsData[0]) {
+        setSelectedCall(liveCallsData[0]);
+      }
+    } else if (!selectedCall && liveCallsData.length > 0) {
+      setSelectedCall(liveCallsData[0]);
+    }
+  }, [liveCallsData])
 
   return (
     <div className="flex h-full">
@@ -191,7 +198,15 @@ export default function LiveConsolePage() {
 
       {/* Main Panel */}
       <div className="flex-1 flex flex-col">
-        {selectedCall ? (
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <Phone className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4 animate-pulse" />
+              <h3 className="text-lg font-medium text-muted-foreground">Loading calls...</h3>
+              <p className="text-sm text-muted-foreground/70">Fetching active calls from Twilio</p>
+            </div>
+          </div>
+        ) : selectedCall ? (
           <>
             {/* Call Header */}
             <div className="p-4 border-b border-border bg-card">
@@ -381,8 +396,14 @@ export default function LiveConsolePage() {
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
               <Phone className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-muted-foreground">No call selected</h3>
-              <p className="text-sm text-muted-foreground/70">Select a live call from the list to monitor</p>
+              <h3 className="text-lg font-medium text-muted-foreground">
+                {liveCallsData.length === 0 ? "No active calls" : "No call selected"}
+              </h3>
+              <p className="text-sm text-muted-foreground/70">
+                {liveCallsData.length === 0 
+                  ? "Call your Twilio number (+17623162272) to see it here!"
+                  : "Select a live call from the list to monitor"}
+              </p>
             </div>
           </div>
         )}

@@ -585,11 +585,15 @@ export default function SettingsPage() {
                   <span className="text-sm font-medium">Twilio</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm">IVR Enabled</span>
+                  <span className="text-sm">Phone Number</span>
+                  <span className="text-sm font-medium">+17623162272</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm">AI Assistant (Vapi)</span>
                   <Switch defaultChecked />
                 </div>
                 <Button variant="outline" className="w-full bg-transparent">
-                  Configure IVR
+                  Configure Voice Settings
                 </Button>
               </CardContent>
             </Card>
@@ -829,6 +833,7 @@ export default function SettingsPage() {
         <TabsContent value="integrations" className="mt-6 space-y-6">
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {[
+              { name: "Vapi", description: "AI Voice Assistant", status: "available", icon: "V" },
               { name: "Salesforce", description: "CRM integration", status: "connected", icon: "S" },
               { name: "Zendesk", description: "Ticketing system", status: "connected", icon: "Z" },
               { name: "Slack", description: "Team notifications", status: "connected", icon: "S" },

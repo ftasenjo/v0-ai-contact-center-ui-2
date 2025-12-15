@@ -28,8 +28,12 @@ import {
   ChevronDown,
   BookOpen,
   Lightbulb,
+  Trash2,
+  UserCheck,
+  AlertTriangle,
 } from "lucide-react"
 import type { Conversation, Message } from "@/lib/sample-data"
+import { getHandlingStatus, getHandlingLabel, getHandlingColor } from "@/lib/conversation-handling"
 import { HandoverModal } from "./handover-modal"
 import { knowledgeBaseSuggestions } from "@/lib/sample-data"
 
@@ -43,11 +47,42 @@ const channelIcons = {
 interface ConversationPanelProps {
   conversation: Conversation | null
   onOpenDrawer: () => void
+  onDelete?: (conversationId: string) => void
 }
 
-export function ConversationPanel({ conversation, onOpenDrawer }: ConversationPanelProps) {
+export function ConversationPanel({ conversation, onOpenDrawer, onDelete }: ConversationPanelProps) {
   const [message, setMessage] = useState("")
   const [handoverOpen, setHandoverOpen] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  
+  // Check if conversation is AI-handled (messages should be blocked)
+  const isAIHandled = conversation && getHandlingStatus(conversation) === 'ai-handled'
+
+  const handleDelete = async () => {
+    if (!conversation || !onDelete) return;
+    
+    if (!confirm('Are you sure you want to delete this conversation? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      const response = await fetch(`/api/conversations/${conversation.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete conversation');
+      }
+
+      onDelete(conversation.id);
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
+      alert('Failed to delete conversation. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  }
   const [aiSuggestion] = useState(
     "I understand this is frustrating, and I sincerely apologize for the inconvenience. Our engineering team has identified the issue and is actively working on restoring service. I can confirm your account will receive a service credit for the downtime. Would you like me to set up a direct escalation path for updates?",
   )
@@ -66,8 +101,16 @@ export function ConversationPanel({ conversation, onOpenDrawer }: ConversationPa
 
   const ChannelIcon = channelIcons[conversation.channel]
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString("en-US", {
+  const formatTime = (date: Date | string) => {
+    // Handle both Date objects and date strings (from API)
+    const dateObj = typeof date === 'string' ? new Date(date) : date
+    
+    // Check if date is valid
+    if (!dateObj || isNaN(dateObj.getTime())) {
+      return 'Just now'
+    }
+    
+    return dateObj.toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
     })
@@ -192,6 +235,25 @@ export function ConversationPanel({ conversation, onOpenDrawer }: ConversationPa
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Handling Status Badge */}
+            {(() => {
+              const handlingStatus = getHandlingStatus(conversation);
+              const HandlingIcon = 
+                handlingStatus === 'ai-handled' ? Bot :
+                handlingStatus === 'human-handling-needed' ? AlertTriangle :
+                UserCheck;
+              
+              return (
+                <Badge
+                  variant="outline"
+                  className={cn("text-xs px-2 py-1 gap-1.5", getHandlingColor(handlingStatus))}
+                >
+                  <HandlingIcon className="h-3.5 w-3.5" />
+                  {getHandlingLabel(handlingStatus)}
+                </Badge>
+              );
+            })()}
+
             {/* Sentiment Meter */}
             <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/50 rounded-lg">
               <span className="text-xs text-muted-foreground">Sentiment</span>
@@ -226,6 +288,14 @@ export function ConversationPanel({ conversation, onOpenDrawer }: ConversationPa
                 <DropdownMenuItem>Add to favorites</DropdownMenuItem>
                 <DropdownMenuItem>Export conversation</DropdownMenuItem>
                 <DropdownMenuItem>View full history</DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="text-red-600 focus:text-red-600 focus:bg-red-50"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {isDeleting ? 'Deleting...' : 'Delete conversation'}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -286,54 +356,72 @@ export function ConversationPanel({ conversation, onOpenDrawer }: ConversationPa
 
         {/* Input Area */}
         <div className="p-4 border-t border-border bg-card">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <Textarea
-                placeholder="Type your message..."
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                className="min-h-[80px] resize-none"
-              />
-            </div>
-          </div>
-          <div className="flex items-center justify-between mt-3">
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setHandoverOpen(true)}>
+          {isAIHandled ? (
+            <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-200 rounded-lg">
+              <Bot className="h-5 w-5 text-amber-600 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-900">AI is handling this conversation</p>
+                <p className="text-xs text-amber-700 mt-1">
+                  Messages are blocked while AI handles this conversation. Use "Human Handover" to take control.
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setHandoverOpen(true)} className="border-amber-300 text-amber-700 hover:bg-amber-50 flex-shrink-0">
                 <ArrowUpRight className="h-4 w-4 mr-1" />
                 Human Handover
               </Button>
-              <Button variant="outline" size="sm">
-                <ArrowUpRight className="h-4 w-4 mr-1" />
-                Escalate
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Tag className="h-4 w-4 mr-1" />
-                    Disposition
-                    <ChevronDown className="h-3 w-3 ml-1" />
+            </div>
+          ) : (
+            <>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <Textarea
+                    placeholder="Type your message..."
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    className="min-h-[80px] resize-none"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-between mt-3">
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setHandoverOpen(true)}>
+                    <ArrowUpRight className="h-4 w-4 mr-1" />
+                    Human Handover
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem>Resolved - First Contact</DropdownMenuItem>
-                  <DropdownMenuItem>Resolved - Follow-up</DropdownMenuItem>
-                  <DropdownMenuItem>Transferred</DropdownMenuItem>
-                  <DropdownMenuItem>Escalated</DropdownMenuItem>
-                  <DropdownMenuItem>No Resolution Needed</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm">
-                <CheckCircle className="h-4 w-4 mr-1" />
-                Wrap-up
-              </Button>
-              <Button size="sm">
-                <Send className="h-4 w-4 mr-1" />
-                Send
-              </Button>
-            </div>
-          </div>
+                  <Button variant="outline" size="sm">
+                    <ArrowUpRight className="h-4 w-4 mr-1" />
+                    Escalate
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Tag className="h-4 w-4 mr-1" />
+                        Disposition
+                        <ChevronDown className="h-3 w-3 ml-1" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      <DropdownMenuItem>Resolved - First Contact</DropdownMenuItem>
+                      <DropdownMenuItem>Resolved - Follow-up</DropdownMenuItem>
+                      <DropdownMenuItem>Transferred</DropdownMenuItem>
+                      <DropdownMenuItem>Escalated</DropdownMenuItem>
+                      <DropdownMenuItem>No Resolution Needed</DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm">
+                    <CheckCircle className="h-4 w-4 mr-1" />
+                    Wrap-up
+                  </Button>
+                  <Button size="sm">
+                    <Send className="h-4 w-4 mr-1" />
+                    Send
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
