@@ -100,3 +100,5 @@ Your app is now using Supabase for persistent storage!
 
 **Need help?** Check `SUPABASE_SETUP.md` for detailed instructions.
 
+
+

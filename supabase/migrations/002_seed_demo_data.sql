@@ -46,3 +46,5 @@ ON CONFLICT (id) DO NOTHING;
 -- Note: Conversations and messages will be inserted via the application
 -- This seed file focuses on reference data (customers and agents)
 
+
+

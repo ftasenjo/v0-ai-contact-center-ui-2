@@ -74,3 +74,5 @@ supabase/migrations/
 
 **That's it! Your database will be ready in 2 minutes! 🚀**
 
+
+

@@ -55,3 +55,5 @@ migrations.forEach((file, index) => {
 console.log('\n✅ After running all migrations, restart your Next.js server!');
 console.log('   pnpm dev\n');
 
+
+

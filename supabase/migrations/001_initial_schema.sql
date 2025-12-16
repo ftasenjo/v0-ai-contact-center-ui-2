@@ -168,3 +168,5 @@ CREATE TRIGGER update_calls_updated_at BEFORE UPDATE ON calls
 CREATE TRIGGER update_channel_messages_updated_at BEFORE UPDATE ON channel_messages
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+
+

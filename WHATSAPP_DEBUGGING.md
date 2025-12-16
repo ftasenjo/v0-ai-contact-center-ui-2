@@ -67,3 +67,5 @@ grep OPENAI_API_KEY .env.local
 
 **The webhook is working! We just need to fix the LangGraph processing. Check your server logs for the error details.**
 
+
+

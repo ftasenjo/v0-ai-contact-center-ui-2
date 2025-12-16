@@ -217,3 +217,5 @@ POST /api/vapi/webhook
 
 **✅ Vapi integration is ready!** Configure your credentials and start making AI-powered calls!
 
+
+

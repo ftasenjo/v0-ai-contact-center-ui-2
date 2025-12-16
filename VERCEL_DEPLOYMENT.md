@@ -136,3 +136,5 @@ Once everything is working:
 4. Set up real-time updates for the live console
 5. Consider setting up a custom domain in Vercel for a cleaner URL
 
+
+

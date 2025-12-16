@@ -57,3 +57,5 @@ INSERT INTO messages (conversation_id, type, content, timestamp) VALUES
 ('770e8400-e29b-41d4-a716-446655440010', 'agent', 'I see the issue. There''s a known issue with our /api/v2/users endpoint affecting some enterprise accounts. Our engineering team is working on a fix. I can provide a workaround using /api/v1/users in the meantime.', NOW() - INTERVAL '10 minutes'),
 ('770e8400-e29b-41d4-a716-446655440010', 'customer', 'Our production API calls are failing with 500 errors. This is affecting our entire platform!', NOW() - INTERVAL '1 minute');
 
+
+

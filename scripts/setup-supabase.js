@@ -134,3 +134,5 @@ async function setupSupabase() {
 // Run setup
 setupSupabase().catch(console.error);
 
+
+

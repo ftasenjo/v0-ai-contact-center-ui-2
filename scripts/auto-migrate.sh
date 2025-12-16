@@ -65,3 +65,5 @@ fi
 echo ""
 echo "✨ After running migrations, restart your server: pnpm dev"
 
+
+

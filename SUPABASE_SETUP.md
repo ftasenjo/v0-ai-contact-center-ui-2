@@ -163,3 +163,5 @@ By default, the app uses in-memory storage. To switch to Supabase:
 
 **Your Supabase database is ready!** All your application data will now persist across server restarts.
 
+
+

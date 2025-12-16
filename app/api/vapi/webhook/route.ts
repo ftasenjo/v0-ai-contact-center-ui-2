@@ -132,3 +132,5 @@ async function handleFunctionCall(call: any, body: any) {
   // Handle function calls here (e.g., create ticket, update CRM, etc.)
 }
 
+
+
