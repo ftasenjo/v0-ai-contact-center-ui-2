@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { ConversationList } from "@/components/inbox/conversation-list"
 import { ConversationPanel } from "@/components/inbox/conversation-panel"
 import { QueueSidebar } from "@/components/inbox/queue-sidebar"
@@ -23,7 +23,77 @@ export default function InboxPage() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
-  // Fetch conversations from API
+  // Store all fetched conversations (before filtering)
+  const [allFetchedConversations, setAllFetchedConversations] = useState<Conversation[]>([])
+
+  // Filter state from QueueSidebar
+  const [selectedQueue, setSelectedQueue] = useState<string>("all")
+  const [selectedChannels, setSelectedChannels] = useState<string[]>([])
+  const [selectedPriorities, setSelectedPriorities] = useState<string[]>([])
+  const [selectedSentiments, setSelectedSentiments] = useState<string[]>([])
+  const [selectedSLA, setSelectedSLA] = useState<string[]>([])
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([])
+
+  // Calculate counts for queues and channels
+  const queueCounts = useMemo(() => {
+    const counts = {
+      all: allFetchedConversations.length,
+      enterprise: 0,
+      sales: 0,
+      billing: 0,
+      technical: 0,
+    }
+    allFetchedConversations.forEach(conv => {
+      const queueName = conv.queue?.toLowerCase() || '';
+      if (queueName.includes("enterprise")) counts.enterprise++;
+      if (queueName.includes("sales")) counts.sales++;
+      if (queueName.includes("billing")) counts.billing++;
+      if (queueName.includes("technical") || queueName.includes("tech")) counts.technical++;
+    })
+    return counts
+  }, [allFetchedConversations])
+
+  const channelCounts = useMemo(() => {
+    const counts = { voice: 0, chat: 0, email: 0, whatsapp: 0 }
+    allFetchedConversations.forEach(conv => {
+      if (counts.hasOwnProperty(conv.channel)) {
+        counts[conv.channel as keyof typeof counts]++
+      }
+    })
+    return counts
+  }, [allFetchedConversations])
+
+  const languageCounts = useMemo(() => {
+    const counts = { en: 0, es: 0, fr: 0, de: 0 }
+    allFetchedConversations.forEach(conv => {
+      let lang = conv.customer.preferredLanguage?.toLowerCase();
+      
+      // If not available, try to map language name to code
+      if (!lang && conv.customer.language) {
+        const langName = conv.customer.language.toLowerCase();
+        const langMap: Record<string, string> = {
+          'english': 'en',
+          'spanish': 'es',
+          'french': 'fr',
+          'german': 'de',
+          'portuguese': 'pt',
+          'italian': 'it',
+          'chinese': 'zh',
+          'japanese': 'ja',
+          'korean': 'ko',
+        };
+        lang = langMap[langName] || langName.substring(0, 2);
+      }
+      
+      lang = lang || 'en';
+      if (counts.hasOwnProperty(lang)) {
+        counts[lang as keyof typeof counts]++
+      }
+    })
+    return counts
+  }, [allFetchedConversations])
+
+  // Fetch conversations from API (only when industry changes)
   useEffect(() => {
     const fetchConversations = async () => {
       try {
@@ -70,30 +140,17 @@ export default function InboxPage() {
             })) || [],
           }));
           
-          // Filter by handling status
-          const filteredConversations = filterByHandlingStatus(allConversations, selectedHandlingStatus);
-          setConversations(filteredConversations);
-          
-          // Update selected conversation
-          if (filteredConversations.length > 0) {
-            if (!selectedConversation || !filteredConversations.find(c => c.id === selectedConversation.id)) {
-              setSelectedConversation(filteredConversations[0]);
-            } else {
-              // Update existing selected conversation
-              const updated = filteredConversations.find(c => c.id === selectedConversation.id);
-              if (updated) setSelectedConversation(updated);
-            }
-          } else {
-            setSelectedConversation(null);
-          }
+          // Store all conversations
+          setAllFetchedConversations(allConversations);
+        } else {
+          setAllFetchedConversations([]);
         }
         setIsLoading(false);
       } catch (error) {
         console.error('Error fetching conversations:', error);
         // Fallback to demo data
         const demoConversations = getConversationsByIndustry(selectedIndustry);
-        setConversations(demoConversations);
-        setSelectedConversation(demoConversations[0] || null);
+        setAllFetchedConversations(demoConversations);
         setIsLoading(false);
       }
     };
@@ -104,7 +161,117 @@ export default function InboxPage() {
     const interval = setInterval(fetchConversations, 5000);
 
     return () => clearInterval(interval);
-  }, [selectedIndustry, selectedHandlingStatus])
+  }, [selectedIndustry]) // Only refetch when industry changes
+
+  // Apply all filters client-side (when filters or fetched data changes)
+  useEffect(() => {
+    console.log('[Inbox] Applying filters:', {
+      totalConversations: allFetchedConversations.length,
+      handlingStatus: selectedHandlingStatus,
+      industry: selectedIndustry,
+      queue: selectedQueue,
+      channels: selectedChannels,
+      priorities: selectedPriorities,
+      sentiments: selectedSentiments,
+      sla: selectedSLA,
+      languages: selectedLanguages,
+    });
+    
+    let filtered = filterByHandlingStatus(allFetchedConversations, selectedHandlingStatus);
+    
+    // Apply queue filter
+    if (selectedQueue !== "all") {
+      filtered = filtered.filter(conv => {
+        const queueName = conv.queue?.toLowerCase() || '';
+        switch (selectedQueue) {
+          case "enterprise":
+            return queueName.includes("enterprise");
+          case "sales":
+            return queueName.includes("sales");
+          case "billing":
+            return queueName.includes("billing");
+          case "technical":
+            return queueName.includes("technical") || queueName.includes("tech");
+          default:
+            return true;
+        }
+      });
+    }
+    
+    // Apply channel filter
+    if (selectedChannels.length > 0) {
+      filtered = filtered.filter(conv => selectedChannels.includes(conv.channel));
+    }
+    
+    // Apply priority filter
+    if (selectedPriorities.length > 0) {
+      filtered = filtered.filter(conv => selectedPriorities.includes(conv.priority));
+    }
+    
+    // Apply sentiment filter
+    if (selectedSentiments.length > 0) {
+      filtered = filtered.filter(conv => selectedSentiments.includes(conv.sentiment));
+    }
+    
+    // Apply SLA status filter
+    if (selectedSLA.length > 0) {
+      filtered = filtered.filter(conv => selectedSLA.includes(conv.sla.status));
+    }
+    
+    // Apply language filter
+    if (selectedLanguages.length > 0) {
+      filtered = filtered.filter(conv => {
+        // Try preferredLanguage first (should be language code like 'en', 'es', etc.)
+        let lang = conv.customer.preferredLanguage?.toLowerCase();
+        
+        // If not available, try to map language name to code
+        if (!lang && conv.customer.language) {
+          const langName = conv.customer.language.toLowerCase();
+          const langMap: Record<string, string> = {
+            'english': 'en',
+            'spanish': 'es',
+            'french': 'fr',
+            'german': 'de',
+            'portuguese': 'pt',
+            'italian': 'it',
+            'chinese': 'zh',
+            'japanese': 'ja',
+            'korean': 'ko',
+          };
+          lang = langMap[langName] || langName.substring(0, 2); // Fallback to first 2 chars
+        }
+        
+        // Default to 'en' if nothing found
+        lang = lang || 'en';
+        
+        return selectedLanguages.includes(lang);
+      });
+    }
+    
+    console.log('[Inbox] Filtered conversations:', filtered.length);
+    
+    setConversations(filtered);
+    
+    // Update selected conversation - only if current selection is not in filtered list
+    if (filtered.length > 0) {
+      const currentSelectedId = selectedConversation?.id
+      if (!currentSelectedId || !filtered.find(c => c.id === currentSelectedId)) {
+        // Current selection is not in filtered list, select first one
+        console.log('[Inbox] Selecting first conversation from filtered list');
+        setSelectedConversation(filtered[0]);
+      } else {
+        // Current selection is still valid, update it with latest data
+        const updated = filtered.find(c => c.id === currentSelectedId);
+        if (updated) {
+          setSelectedConversation(updated);
+        }
+      }
+    } else {
+      console.log('[Inbox] No conversations match filter, clearing selection');
+      setSelectedConversation(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allFetchedConversations, selectedHandlingStatus, selectedQueue, selectedChannels, selectedPriorities, selectedSentiments, selectedSLA, selectedLanguages])
 
   return (
     <div className="flex h-full flex-col">
@@ -133,7 +300,23 @@ export default function InboxPage() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Queue Sidebar */}
-        <QueueSidebar />
+        <QueueSidebar
+          selectedQueue={selectedQueue}
+          onQueueChange={setSelectedQueue}
+          selectedChannels={selectedChannels}
+          onChannelsChange={setSelectedChannels}
+          selectedPriorities={selectedPriorities}
+          onPrioritiesChange={setSelectedPriorities}
+          selectedSentiments={selectedSentiments}
+          onSentimentsChange={setSelectedSentiments}
+          selectedSLA={selectedSLA}
+          onSLAChange={setSelectedSLA}
+          selectedLanguages={selectedLanguages}
+          onLanguagesChange={setSelectedLanguages}
+          conversationCounts={queueCounts}
+          channelCounts={channelCounts}
+          languageCounts={languageCounts}
+        />
 
       {/* Conversation List */}
       <ConversationList

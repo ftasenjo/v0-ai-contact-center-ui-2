@@ -1,31 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { writeAuditLog } from '@/lib/banking-store';
-
-type UserRole = 'agent' | 'supervisor' | 'admin' | 'analyst';
-
-function requireOutboundPermission(request: NextRequest): { ok: true; role: UserRole } | { ok: false; res: NextResponse } {
-  const role = (request.headers.get('x-user-role') || '').toLowerCase() as UserRole;
-  if (!role) {
-    return { ok: false, res: NextResponse.json({ error: 'Missing x-user-role header' }, { status: 401 }) };
-  }
-  if (role !== 'admin' && role !== 'supervisor') {
-    return { ok: false, res: NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 }) };
-  }
-  return { ok: true, role };
-}
+import { requireOutboundAdmin } from '@/lib/outbound/api-auth';
 
 /**
  * POST /api/outbound/jobs/:id/cancel
  * Body: { reasonCode?: string; reasonMessage?: string; outcomeCode?: string }
  */
-export async function POST(request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
-  const perm = requireOutboundPermission(request);
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const perm = requireOutboundAdmin(request);
   if (!perm.ok) return perm.res;
 
   const now = new Date();
   try {
-    const { id } = await ctx.params;
+    const { id } = await params;
     const body = await request.json().catch(() => ({}));
 
     const reasonCode = body?.reasonCode || 'cancelled_by_staff';
@@ -50,7 +41,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
 
     await writeAuditLog({
       actorType: 'agent',
-      actorId: perm.role,
+      actorId: perm.actorId,
       eventType: 'outbound_job_cancelled',
       eventVersion: 1,
       bankCustomerId: job.bank_customer_id || undefined,
@@ -64,7 +55,7 @@ export async function POST(request: NextRequest, ctx: { params: Promise<{ id: st
   } catch (error: any) {
     await writeAuditLog({
       actorType: 'agent',
-      actorId: perm.ok ? perm.role : undefined,
+      actorId: perm.ok ? perm.actorId : undefined,
       eventType: 'outbound_job_cancel_failed',
       eventVersion: 1,
       context: 'outbound',

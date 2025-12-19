@@ -30,6 +30,7 @@ MIGRATIONS=(
     "supabase/migrations/005_banking_demo_data.sql"
     "supabase/migrations/006_add_missing_cc_step1.sql"
     "supabase/migrations/007_cc_voice_transcripts.sql"
+    "supabase/migrations/008_outbound_workflows.sql"
 )
 
 for i in "${!MIGRATIONS[@]}"; do

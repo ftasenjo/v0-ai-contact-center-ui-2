@@ -10,26 +10,57 @@ import { normalizeAddress } from './identity-resolution';
 // Use server client for all banking store operations (bypasses RLS)
 const supabase = supabaseServer;
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isLikelyCloudflareHtmlError(message: any): boolean {
+  if (typeof message !== 'string') return false;
+  const m = message.toLowerCase();
+  return m.includes('<html') && (m.includes('cloudflare') || m.includes('bad gateway') || m.includes('error code'));
+}
+
 /**
  * Get all banking conversations from cc_conversations table
  */
 export async function getAllBankingConversations(): Promise<Conversation[]> {
   try {
     console.log('🔍 Querying cc_conversations...');
-    const { data, error } = await supabase
-      .from('cc_conversations')
-      .select(`
+    // Supabase occasionally returns transient Cloudflare 5xx HTML error pages.
+    // Retrying makes the UI resilient without hiding real schema/query problems.
+    let data: any = null;
+    let error: any = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const res = await supabase
+        .from('cc_conversations')
+        .select(
+          `
         *,
         bank_customer:cc_bank_customers(*),
         messages:cc_messages(*)
-      `)
-      .order('opened_at', { ascending: false });
+      `
+        )
+        .order('opened_at', { ascending: false });
+
+      data = res.data;
+      error = res.error;
+
+      if (!error) break;
+
+      const retriable = isLikelyCloudflareHtmlError(error.message);
+      console.error(`❌ Supabase query error (attempt ${attempt}/3):`, {
+        code: error.code,
+        message: typeof error.message === 'string' ? error.message.slice(0, 160) : error.message,
+        details: error.details,
+        hint: error.hint,
+        retriable,
+      });
+
+      if (!retriable || attempt === 3) break;
+      await sleep(250 * attempt);
+    }
 
     if (error) {
-      console.error('❌ Supabase query error:', error);
-      console.error('Error code:', error.code);
-      console.error('Error message:', error.message);
-      console.error('Error details:', error.details);
       return [];
     }
     
@@ -70,7 +101,11 @@ export async function getAllBankingConversations(): Promise<Conversation[]> {
             avatar: '/placeholder-user.jpg',
             language: 'English',
             preferredLanguage: 'en',
-            tier: customer?.risk_level === 'high' ? 'enterprise' : customer?.risk_level === 'medium' ? 'premium' : 'standard',
+            tier: (customer?.risk_level === 'high'
+              ? 'enterprise'
+              : customer?.risk_level === 'medium'
+              ? 'premium'
+              : 'standard') as Conversation['customer']['tier'],
           },
           channel: conv.channel || 'whatsapp',
           status: conv.status || 'open',
@@ -104,7 +139,7 @@ export async function getAllBankingConversations(): Promise<Conversation[]> {
       });
       
       // Sort by last message time desc so active threads appear first
-      mapped.sort((a, b) => b.lastMessageTime.getTime() - a.lastMessageTime.getTime());
+      mapped.sort((a: Conversation, b: Conversation) => b.lastMessageTime.getTime() - a.lastMessageTime.getTime());
       return mapped;
     } catch (mappingError: any) {
       console.error('❌ Error mapping banking conversations:', mappingError);
@@ -726,44 +761,47 @@ export async function createBankingConversationFromVoiceCall(params: {
 
     const fromAddress = normalizeAddress('voice', params.from);
     const toAddress = normalizeAddress('voice', params.to);
+    const isPlausibleE164 = (v: string) => /^\+\d{6,15}$/.test(v);
 
     // A) Upsert identity link (no bank_customer binding yet)
-    try {
-      const { data: existingLink } = await supabase
-        .from('cc_identity_links')
-        .select('id')
-        .eq('channel', 'voice')
-        .eq('address', fromAddress)
-        .maybeSingle();
+    if (isPlausibleE164(fromAddress)) {
+      try {
+        const { data: existingLink } = await supabase
+          .from('cc_identity_links')
+          .select('id')
+          .eq('channel', 'voice')
+          .eq('address', fromAddress)
+          .maybeSingle();
 
-      if (existingLink) {
-        await supabase
-          .from('cc_identity_links')
-          .update({ last_seen_at: new Date().toISOString() })
-          .eq('id', existingLink.id);
-      } else {
-        await supabase
-          .from('cc_identity_links')
-          .insert({
-            channel: 'voice',
-            address: fromAddress,
-            is_verified: false,
-            confidence: 0,
-            last_seen_at: new Date().toISOString(),
-          });
+        if (existingLink) {
+          await supabase
+            .from('cc_identity_links')
+            .update({ last_seen_at: new Date().toISOString() })
+            .eq('id', existingLink.id);
+        } else {
+          await supabase
+            .from('cc_identity_links')
+            .insert({
+              channel: 'voice',
+              address: fromAddress,
+              is_verified: false,
+              confidence: 0,
+              last_seen_at: new Date().toISOString(),
+            });
+        }
+      } catch (identityError: any) {
+        await writeAuditLog({
+          actorType: 'system',
+          eventType: 'identity_link_upsert_failed',
+          eventVersion: 1,
+          inputRedacted: { channel: 'voice', addressPrefix: fromAddress.substring(0, 6) + '...' },
+          success: false,
+          errorCode: 'IDENTITY_LINK_UPSERT_FAILED',
+          errorMessage: identityError?.message || 'Unknown error upserting identity link',
+          context: 'webhook',
+        });
+        // Continue (fail-open for identity link upsert)
       }
-    } catch (identityError: any) {
-      await writeAuditLog({
-        actorType: 'system',
-        eventType: 'identity_link_upsert_failed',
-        eventVersion: 1,
-        inputRedacted: { channel: 'voice', addressPrefix: fromAddress.substring(0, 6) + '...' },
-        success: false,
-        errorCode: 'IDENTITY_LINK_UPSERT_FAILED',
-        errorMessage: identityError?.message || 'Unknown error upserting identity link',
-        context: 'webhook',
-      });
-      // Continue (fail-open for identity link upsert)
     }
 
     // B) Repair path: if a call-start marker exists, use it to locate the conversation deterministically

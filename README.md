@@ -45,6 +45,35 @@ Any changes you make to your deployed app will be automatically pushed to this r
 - `POST /api/email/send` - Sends emails
 - `POST /api/email/webhook` - Receives email events
 
+## 🚀 Public Demo Deployment
+
+This application is ready for public demos! **ANYONE** can call or message your Twilio numbers.
+
+### Quick Links
+
+- **🚀 Public Demo Setup**: [`PUBLIC_DEMO_SETUP.md`](./PUBLIC_DEMO_SETUP.md) - Complete guide for public demos
+- **⚡ Quick Start**: [`DEMO_QUICK_START.md`](./DEMO_QUICK_START.md) - Get started in 5 minutes
+- **📖 Vercel Deployment**: [`docs/VERCEL_DEPLOYMENT.md`](./docs/VERCEL_DEPLOYMENT.md) - Step-by-step Vercel guide
+- **📞 Twilio Webhooks**: [`docs/TWILIO_WEBHOOK_SETUP.md`](./docs/TWILIO_WEBHOOK_SETUP.md) - Configure webhooks
+- **✅ Checklist**: [`VERCEL_DEPLOYMENT_CHECKLIST.md`](./VERCEL_DEPLOYMENT_CHECKLIST.md) - Deployment checklist
+- **📋 Readiness**: [`docs/DEMO_READINESS.md`](./docs/DEMO_READINESS.md) - Pre-deployment checklist
+
+### Demo Features
+- ✅ Error boundaries and 404 pages
+- ✅ Demo mode configuration
+- ✅ Comprehensive error handling
+- ✅ Pre-seeded demo data
+- ✅ Knowledge base with 20+ articles
+- ✅ Agent performance dashboard
+
+### Quick Deploy
+1. Run database migrations in Supabase
+2. Configure environment variables
+3. Deploy to Vercel (or your preferred platform)
+4. Test key pages
+
+See [`DEMO_QUICK_START.md`](./DEMO_QUICK_START.md) for details.
+
 ## Deployment
 
 Your project is live at:

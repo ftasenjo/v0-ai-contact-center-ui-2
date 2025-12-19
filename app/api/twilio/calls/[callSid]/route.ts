@@ -7,10 +7,10 @@ import { getTwilioClient } from '@/lib/twilio';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { callSid: string } }
+  { params }: { params: Promise<{ callSid: string }> }
 ) {
   try {
-    const { callSid } = params;
+    const { callSid } = await params;
 
     if (!callSid) {
       return NextResponse.json(
@@ -60,10 +60,10 @@ export async function GET(
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { callSid: string } }
+  { params }: { params: Promise<{ callSid: string }> }
 ) {
   try {
-    const { callSid } = params;
+    const { callSid } = await params;
 
     if (!callSid) {
       return NextResponse.json(

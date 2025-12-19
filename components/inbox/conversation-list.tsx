@@ -1,5 +1,6 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -18,6 +19,7 @@ import {
   Bot,
   User,
   UserCheck,
+  ExternalLink,
 } from "lucide-react"
 import type { Conversation } from "@/lib/sample-data"
 import { getHandlingStatus, getHandlingLabel, getHandlingColor } from "@/lib/conversation-handling"
@@ -55,6 +57,20 @@ interface ConversationListProps {
 }
 
 export function ConversationList({ conversations, selectedId, onSelect }: ConversationListProps) {
+  const router = useRouter()
+
+  const handleConversationClick = (e: React.MouseEvent, conversation: Conversation) => {
+    // Allow Ctrl/Cmd+Click to open detail page in new tab
+    if (e.ctrlKey || e.metaKey) {
+      window.open(`/conversations/${conversation.id}?tab=messages`, '_blank')
+      return
+    }
+    // Regular click: just select the conversation (don't navigate)
+    // The onSelect callback will update the right panel
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
   const formatTime = (date: Date | string) => {
     // Handle both Date objects and date strings (from API)
     const dateObj = typeof date === 'string' ? new Date(date) : date
@@ -93,9 +109,14 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
           return (
             <button
               key={conversation.id}
-              onClick={() => onSelect(conversation)}
+              onClick={(e) => {
+                // Select the conversation to show in the right panel
+                onSelect(conversation)
+                // Handle special cases (Ctrl/Cmd+Click for new tab)
+                handleConversationClick(e, conversation)
+              }}
               className={cn(
-                "w-full text-left p-4 border-b border-border hover:bg-muted/50 transition-colors",
+                "w-full text-left p-4 border-b border-border hover:bg-muted/50 transition-colors relative group cursor-pointer",
                 selectedId === conversation.id && "bg-muted",
               )}
             >
@@ -210,6 +231,10 @@ export function ConversationList({ conversations, selectedId, onSelect }: Conver
                     })()}
                   </div>
                 </div>
+              </div>
+              {/* View Details indicator */}
+              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                <ExternalLink className="h-4 w-4 text-muted-foreground" />
               </div>
             </button>
           )

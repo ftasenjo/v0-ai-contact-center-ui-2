@@ -66,6 +66,68 @@ export function getVapiPhoneNumberId(): string | undefined {
   return process.env.VAPI_PHONE_NUMBER_ID;
 }
 
+let cachedOrgId: string | null | undefined;
+
+function looksLikeOrgId(value: string | null | undefined): value is string {
+  if (!value) return false;
+  // Vapi orgId is typically a UUID.
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function getVapiPublicKeyFromEnv(): string | undefined {
+  return (
+    process.env.VAPI_PUBLIC_API_KEY ||
+    process.env.VAPI_PUBLIC_KEY ||
+    process.env.NEXT_PUBLIC_VAPI_PUBLIC_API_KEY
+  );
+}
+
+/**
+ * Get Vapi orgId.
+ *
+ * Prefer VAPI_ORG_ID env var, but if missing/misconfigured,
+ * fetch from Vapi API using VAPI_API_KEY + VAPI_ASSISTANT_ID and cache it.
+ */
+export async function getVapiOrgId(): Promise<string | undefined> {
+  const publicKey = getVapiPublicKeyFromEnv();
+  // Guardrail: we've seen cases where users accidentally paste the PUBLIC key into VAPI_ORG_ID.
+  // If it equals the public key, treat as misconfigured and fall back to fetching from API.
+  if (looksLikeOrgId(process.env.VAPI_ORG_ID) && process.env.VAPI_ORG_ID !== publicKey) {
+    return process.env.VAPI_ORG_ID;
+  }
+  if (
+    looksLikeOrgId(process.env.VAPI_ORGANIZATION_ID) &&
+    process.env.VAPI_ORGANIZATION_ID !== publicKey
+  ) {
+    return process.env.VAPI_ORGANIZATION_ID;
+  }
+  if (cachedOrgId !== undefined) return cachedOrgId || undefined;
+
+  const apiKey = process.env.VAPI_API_KEY;
+  const assistantId = process.env.VAPI_ASSISTANT_ID;
+  if (!apiKey || !assistantId) {
+    cachedOrgId = null;
+    return undefined;
+  }
+
+  try {
+    const res = await fetch(`${VAPI_API_URL}/assistant/${assistantId}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) {
+      cachedOrgId = null;
+      return undefined;
+    }
+    const json: any = await res.json();
+    cachedOrgId = looksLikeOrgId(json?.orgId) ? json.orgId : null;
+    return cachedOrgId || undefined;
+  } catch {
+    cachedOrgId = null;
+    return undefined;
+  }
+}
+
 /**
  * Create a Vapi call
  */

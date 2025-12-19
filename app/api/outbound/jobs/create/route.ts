@@ -2,19 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
 import { normalizeAddress } from '@/lib/identity-resolution';
 import { writeAuditLog } from '@/lib/banking-store';
-
-type UserRole = 'agent' | 'supervisor' | 'admin' | 'analyst';
-
-function requireOutboundPermission(request: NextRequest): { ok: true; role: UserRole } | { ok: false; res: NextResponse } {
-  const role = (request.headers.get('x-user-role') || '').toLowerCase() as UserRole;
-  if (!role) {
-    return { ok: false, res: NextResponse.json({ error: 'Missing x-user-role header' }, { status: 401 }) };
-  }
-  if (role !== 'admin' && role !== 'supervisor') {
-    return { ok: false, res: NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 }) };
-  }
-  return { ok: true, role };
-}
+import { requireOutboundAdmin } from '@/lib/outbound/api-auth';
 
 function defaultMaxAttempts(channel: string): number {
   return channel === 'voice' ? 2 : 3;
@@ -34,7 +22,7 @@ function defaultMaxAttempts(channel: string): number {
  * - maxAttempts?: number
  */
 export async function POST(request: NextRequest) {
-  const perm = requireOutboundPermission(request);
+  const perm = requireOutboundAdmin(request);
   if (!perm.ok) return perm.res;
 
   const now = new Date();
@@ -108,7 +96,7 @@ export async function POST(request: NextRequest) {
 
     await writeAuditLog({
       actorType: 'agent',
-      actorId: perm.role,
+      actorId: perm.actorId,
       eventType: 'outbound_job_created',
       eventVersion: 1,
       bankCustomerId: bankCustomerId || undefined,
@@ -128,7 +116,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     await writeAuditLog({
       actorType: 'agent',
-      actorId: perm.ok ? perm.role : undefined,
+      actorId: perm.ok ? perm.actorId : undefined,
       eventType: 'outbound_job_create_failed',
       eventVersion: 1,
       context: 'outbound',

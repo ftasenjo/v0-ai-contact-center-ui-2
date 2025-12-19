@@ -1,19 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runDueOutboundJobs } from '@/lib/outbound/outbound-runner';
 import { writeAuditLog } from '@/lib/banking-store';
-
-type UserRole = 'agent' | 'supervisor' | 'admin' | 'analyst';
-
-function requireOutboundPermission(request: NextRequest): { ok: true; role: UserRole } | { ok: false; res: NextResponse } {
-  const role = (request.headers.get('x-user-role') || '').toLowerCase() as UserRole;
-  if (!role) {
-    return { ok: false, res: NextResponse.json({ error: 'Missing x-user-role header' }, { status: 401 }) };
-  }
-  if (role !== 'admin' && role !== 'supervisor') {
-    return { ok: false, res: NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 }) };
-  }
-  return { ok: true, role };
-}
+import { requireOutboundAdmin } from '@/lib/outbound/api-auth';
+import { runAutomationDispatcher } from '@/lib/automation/dispatcher';
 
 /**
  * POST /api/outbound/jobs/run
@@ -22,7 +11,7 @@ function requireOutboundPermission(request: NextRequest): { ok: true; role: User
  * Intended for cron invocation later (Vercel Cron).
  */
 export async function POST(request: NextRequest) {
-  const perm = requireOutboundPermission(request);
+  const perm = requireOutboundAdmin(request);
   if (!perm.ok) return perm.res;
 
   const now = new Date();
@@ -32,22 +21,40 @@ export async function POST(request: NextRequest) {
 
     const result = await runDueOutboundJobs({ limit, now });
 
+    // Step 11: Automatically run dispatcher after outbound runner (piggyback)
+    // This ensures automation events are processed promptly without separate cron
+    let dispatcherResult = null;
+    try {
+      dispatcherResult = await runAutomationDispatcher({ limit: 50, now });
+    } catch (dispatcherError: any) {
+      // Non-fatal: log but don't fail the outbound runner
+      console.warn('[outbound/run] Dispatcher failed (non-fatal):', dispatcherError?.message);
+    }
+
     await writeAuditLog({
       actorType: 'agent',
-      actorId: perm.role,
+      actorId: perm.actorId,
       eventType: 'outbound_runner_invoked',
       eventVersion: 1,
       context: 'outbound',
       inputRedacted: { limit, now: now.toISOString() },
-      outputRedacted: { processed: result.processed },
+      outputRedacted: { 
+        processed: result.processed,
+        dispatcher_ran: dispatcherResult !== null,
+        dispatcher_sent: dispatcherResult?.sent || 0,
+      },
       success: true,
     });
 
-    return NextResponse.json({ success: true, ...result });
+    return NextResponse.json({ 
+      success: true, 
+      ...result,
+      dispatcher: dispatcherResult,
+    });
   } catch (error: any) {
     await writeAuditLog({
       actorType: 'agent',
-      actorId: perm.ok ? perm.role : undefined,
+      actorId: perm.ok ? perm.actorId : undefined,
       eventType: 'outbound_runner_invoke_failed',
       eventVersion: 1,
       context: 'outbound',

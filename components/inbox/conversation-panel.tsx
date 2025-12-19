@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -31,11 +31,15 @@ import {
   Trash2,
   UserCheck,
   AlertTriangle,
+  FileText,
 } from "lucide-react"
 import type { Conversation, Message } from "@/lib/sample-data"
 import { getHandlingStatus, getHandlingLabel, getHandlingColor } from "@/lib/conversation-handling"
 import { HandoverModal } from "./handover-modal"
 import { knowledgeBaseSuggestions } from "@/lib/sample-data"
+import { CallAnalysisDisplay } from "@/components/calls/call-analysis-display"
+import { useRouter } from "next/navigation"
+import type { CallAnalysisRow } from "@/lib/automation/types"
 
 const channelIcons = {
   voice: Phone,
@@ -54,9 +58,34 @@ export function ConversationPanel({ conversation, onOpenDrawer, onDelete }: Conv
   const [message, setMessage] = useState("")
   const [handoverOpen, setHandoverOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [callAnalysis, setCallAnalysis] = useState<CallAnalysisRow | null>(null)
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false)
+  const router = useRouter()
   
   // Check if conversation is AI-handled (messages should be blocked)
   const isAIHandled = conversation && getHandlingStatus(conversation) === 'ai-handled'
+
+  // Fetch call analysis for voice conversations
+  useEffect(() => {
+    if (conversation?.channel === 'voice' && conversation?.id) {
+      setLoadingAnalysis(true)
+      fetch(`/api/calls/analysis?conversation_id=${conversation.id}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.items && data.items.length > 0) {
+            setCallAnalysis(data.items[0]) // Get most recent analysis
+          }
+        })
+        .catch((e) => {
+          console.error("Failed to fetch call analysis:", e)
+        })
+        .finally(() => {
+          setLoadingAnalysis(false)
+        })
+    } else {
+      setCallAnalysis(null)
+    }
+  }, [conversation?.id, conversation?.channel])
 
   const handleDelete = async () => {
     if (!conversation || !onDelete) return;
@@ -301,58 +330,84 @@ export function ConversationPanel({ conversation, onOpenDrawer, onDelete }: Conv
           </div>
         </div>
 
+        {/* View Summary Button */}
+        {conversation && (
+          <div className="px-6 pt-4 border-b">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push(`/conversations/${conversation.id}?tab=overview`)}
+              className="w-full"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              View Full Summary & Details
+            </Button>
+          </div>
+        )}
+
+        {/* Call Analysis (for voice calls) - Compact view */}
+        {conversation.channel === 'voice' && callAnalysis && (
+          <div className="px-6 pt-4 border-b">
+            <CallAnalysisDisplay analysis={callAnalysis} />
+          </div>
+        )}
+
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-6">{conversation.messages.map(renderMessage)}</div>
 
-        {/* AI Suggestion */}
-        <div className="px-6 pb-4">
-          <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">AI Suggested Response</span>
-              <Badge variant="outline" className="text-xs ml-auto">
-                {Math.round(conversation.aiConfidence * 100)}% match
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground mb-3">{aiSuggestion}</p>
-            <div className="flex items-center gap-2">
-              <Button size="sm" onClick={() => setMessage(aiSuggestion)}>
-                Insert
-              </Button>
-              <Button variant="outline" size="sm">
-                <RefreshCw className="h-3.5 w-3.5 mr-1" />
-                Regenerate
-              </Button>
-              <Button variant="outline" size="sm">
-                <Minus className="h-3.5 w-3.5 mr-1" />
-                Shorten
-              </Button>
-              <Button variant="outline" size="sm">
-                <Heart className="h-3.5 w-3.5 mr-1" />
-                More empathetic
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Knowledge Base Suggestions */}
-        <div className="px-6 pb-4">
-          <div className="flex items-center gap-2 mb-2">
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
-            <span className="text-sm font-medium">Knowledge Base</span>
-          </div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {knowledgeBaseSuggestions.map((kb) => (
-              <Button key={kb.id} variant="outline" size="sm" className="flex-shrink-0 gap-1.5 text-xs bg-transparent">
-                <Lightbulb className="h-3 w-3" />
-                {kb.title}
-                <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                  {Math.round(kb.relevance * 100)}%
+        {/* AI Suggestion - Hidden for AI-handled conversations */}
+        {!isAIHandled && (
+          <div className="px-6 pb-4">
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">AI Suggested Response</span>
+                <Badge variant="outline" className="text-xs ml-auto">
+                  {Math.round(conversation.aiConfidence * 100)}% match
                 </Badge>
-              </Button>
-            ))}
+              </div>
+              <p className="text-sm text-muted-foreground mb-3">{aiSuggestion}</p>
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={() => setMessage(aiSuggestion)}>
+                  Insert
+                </Button>
+                <Button variant="outline" size="sm">
+                  <RefreshCw className="h-3.5 w-3.5 mr-1" />
+                  Regenerate
+                </Button>
+                <Button variant="outline" size="sm">
+                  <Minus className="h-3.5 w-3.5 mr-1" />
+                  Shorten
+                </Button>
+                <Button variant="outline" size="sm">
+                  <Heart className="h-3.5 w-3.5 mr-1" />
+                  More empathetic
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Knowledge Base Suggestions - Hidden for AI-handled conversations */}
+        {!isAIHandled && (
+          <div className="px-6 pb-4">
+            <div className="flex items-center gap-2 mb-2">
+              <BookOpen className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Knowledge Base</span>
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {knowledgeBaseSuggestions.map((kb) => (
+                <Button key={kb.id} variant="outline" size="sm" className="flex-shrink-0 gap-1.5 text-xs bg-transparent">
+                  <Lightbulb className="h-3 w-3" />
+                  {kb.title}
+                  <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                    {Math.round(kb.relevance * 100)}%
+                  </Badge>
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Input Area */}
         <div className="p-4 border-t border-border bg-card">

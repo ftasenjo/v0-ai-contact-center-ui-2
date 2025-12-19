@@ -53,6 +53,7 @@ export const rolePermissions: Record<UserRole, string[]> = {
     "knowledge-base:manage",
     "workflows:view",
     "workflows:manage",
+    "automation:manage",
     "quality:view",
     "live-console:view",
   ],
@@ -81,6 +82,7 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
     "/reports": ["reports:view"],
     "/knowledge": ["knowledge-base:view"],
     "/workflows": ["workflows:view"],
+    "/automation": ["automation:manage"],
   }
 
   const requiredPermissions = routePermissions[route]

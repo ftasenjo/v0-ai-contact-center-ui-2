@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -39,96 +39,128 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 
-const knowledgeArticles = [
-  {
-    id: "kb-001",
-    title: "How to Reset Customer Passwords",
-    category: "Account Management",
-    views: 1247,
-    helpful: 234,
-    lastUpdated: "2 days ago",
-    author: "Sarah Chen",
-    type: "article",
-    aiSuggested: 89,
-  },
-  {
-    id: "kb-002",
-    title: "Billing Dispute Resolution Process",
-    category: "Billing",
-    views: 892,
-    helpful: 178,
-    lastUpdated: "1 week ago",
-    author: "David Park",
-    type: "article",
-    aiSuggested: 156,
-  },
-  {
-    id: "kb-003",
-    title: "Enterprise SLA Compensation Policy",
-    category: "Enterprise",
-    views: 456,
-    helpful: 89,
-    lastUpdated: "3 days ago",
-    author: "Maria Garcia",
-    type: "article",
-    aiSuggested: 67,
-  },
-  {
-    id: "kb-004",
-    title: "API Integration Troubleshooting",
-    category: "Technical",
-    views: 2134,
-    helpful: 412,
-    lastUpdated: "5 days ago",
-    author: "Alex Thompson",
-    type: "article",
-    aiSuggested: 234,
-  },
-  {
-    id: "kb-005",
-    title: "Product Demo Walkthrough",
-    category: "Sales",
-    views: 678,
-    helpful: 123,
-    lastUpdated: "1 day ago",
-    author: "Sarah Chen",
-    type: "video",
-    aiSuggested: 45,
-  },
-  {
-    id: "kb-006",
-    title: "Cancellation and Refund Guidelines",
-    category: "Billing",
-    views: 1523,
-    helpful: 298,
-    lastUpdated: "4 days ago",
-    author: "David Park",
-    type: "article",
-    aiSuggested: 189,
-  },
-]
+interface KnowledgeArticle {
+  id: string
+  title: string
+  category: string
+  subcategory?: string
+  content: string
+  summary?: string
+  view_count: number
+  helpful_count: number
+  not_helpful_count: number
+  created_at: string
+  updated_at: string
+  tags?: string[]
+}
 
-const categories = [
-  { name: "All", count: knowledgeArticles.length },
-  { name: "Account Management", count: 12 },
-  { name: "Billing", count: 8 },
-  { name: "Technical", count: 15 },
-  { name: "Enterprise", count: 6 },
-  { name: "Sales", count: 9 },
-]
+const categoryLabels: Record<string, string> = {
+  account_management: "Account Management",
+  cards: "Cards",
+  payments: "Payments",
+  loans: "Loans",
+  fraud_security: "Fraud & Security",
+  disputes: "Disputes",
+  fees: "Fees",
+  transfers: "Transfers",
+  online_banking: "Online Banking",
+  mobile_app: "Mobile App",
+  branch_services: "Branch Services",
+  compliance: "Compliance",
+  general: "General",
+}
 
 export default function KnowledgePage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [articles, setArticles] = useState<KnowledgeArticle[]>([])
+  const [loading, setLoading] = useState(true)
+  const [selectedArticle, setSelectedArticle] = useState<KnowledgeArticle | null>(null)
+  const [needsMigration, setNeedsMigration] = useState(false)
 
-  const filteredArticles = knowledgeArticles.filter((article) => {
-    const matchesSearch =
-      article.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      article.category.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesCategory = selectedCategory === "All" || article.category === selectedCategory
-    return matchesSearch && matchesCategory
-  })
+  // Fetch articles from API
+  useEffect(() => {
+    const fetchArticles = async () => {
+      try {
+        setLoading(true)
+        const url = selectedCategory !== "All"
+          ? `/api/knowledge/search?category=${selectedCategory}${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}`
+          : `/api/knowledge/search${searchQuery ? `?q=${encodeURIComponent(searchQuery)}` : ""}`
+        
+        const response = await fetch(url)
+        const data = await response.json()
+        
+        if (data.error) {
+          console.error("Knowledge base error:", data.error)
+          // Show error message to user
+          if (data.error.includes("table not found") || data.error.includes("does not exist") || data.needsMigration) {
+            setArticles([])
+            setNeedsMigration(true)
+          }
+        } else {
+          setNeedsMigration(false)
+        }
+        
+        if (data.articles) {
+          setArticles(data.articles)
+        } else {
+          setArticles([])
+        }
+      } catch (error) {
+        console.error("Failed to fetch knowledge articles:", error)
+        setArticles([])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    const debounceTimer = setTimeout(fetchArticles, 300)
+    return () => clearTimeout(debounceTimer)
+  }, [searchQuery, selectedCategory])
+
+  // Get unique categories from articles
+  const categories = [
+    { name: "All", count: articles.length },
+    ...Array.from(new Set(articles.map((a) => a.category))).map((cat) => ({
+      name: cat,
+      count: articles.filter((a) => a.category === cat).length,
+    })),
+  ]
+
+  const handleArticleClick = async (article: KnowledgeArticle) => {
+    setSelectedArticle(article)
+    // Track view
+    try {
+      await fetch("/api/knowledge/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ articleId: article.id, action: "view" }),
+      })
+    } catch (error) {
+      console.error("Failed to track view:", error)
+    }
+  }
+
+  const handleHelpful = async (articleId: string) => {
+    try {
+      await fetch("/api/knowledge/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ articleId, action: "helpful" }),
+      })
+      // Refresh articles to update counts
+      const response = await fetch("/api/knowledge/search")
+      const data = await response.json()
+      if (data.articles) {
+        setArticles(data.articles)
+        const updated = data.articles.find((a: KnowledgeArticle) => a.id === articleId)
+        if (updated) setSelectedArticle(updated)
+      }
+    } catch (error) {
+      console.error("Failed to track helpful:", error)
+    }
+  }
 
   return (
     <div className="flex h-full">
@@ -148,7 +180,7 @@ export default function KnowledgePage() {
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span>{category.name}</span>
+                  <span>{category.name === "All" ? "All" : categoryLabels[category.name] || category.name}</span>
                   <Badge variant="secondary" className="text-xs">
                     {category.count}
                   </Badge>
@@ -266,25 +298,78 @@ export default function KnowledgePage() {
 
         <ScrollArea className="flex-1">
           <div className="p-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {filteredArticles.map((article) => (
-                <Card key={article.id} className="hover:border-primary/50 transition-colors">
+            {loading ? (
+              <div className="text-center py-8 text-muted-foreground">Loading knowledge base articles...</div>
+            ) : articles.length === 0 ? (
+              <div className="text-center py-8 space-y-4">
+                <div className="text-muted-foreground">
+                  {searchQuery ? "No articles found matching your search." : "No knowledge base articles available."}
+                </div>
+                {needsMigration && (
+                  <Card className="max-w-2xl mx-auto mt-4 border-amber-200 bg-amber-50 dark:bg-amber-950/20">
+                    <CardHeader>
+                      <CardTitle className="text-lg">Database Migration Required</CardTitle>
+                      <CardDescription>
+                        The knowledge base table hasn't been created yet. Please run the migration to get started.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-left">
+                      <div>
+                        <p className="font-medium mb-2">Steps to set up the knowledge base:</p>
+                        <ol className="list-decimal list-inside space-y-2 text-sm">
+                          <li>
+                            Open your Supabase dashboard and go to the <strong>SQL Editor</strong>
+                          </li>
+                          <li>
+                            Copy the contents of <code className="bg-muted px-1.5 py-0.5 rounded text-xs">supabase/migrations/012_banking_knowledge_base.sql</code>
+                          </li>
+                          <li>
+                            Paste it into the SQL Editor and click <strong>"Run"</strong>
+                          </li>
+                          <li>
+                            Refresh this page - the knowledge base articles should appear
+                          </li>
+                        </ol>
+                      </div>
+                      <div className="pt-2 border-t">
+                        <p className="text-xs text-muted-foreground">
+                          This migration will create the <code className="bg-muted px-1 rounded">cc_knowledge_base</code> table and populate it with 20+ banking support articles.
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+                {!needsMigration && !searchQuery && (
+                  <div className="text-sm text-muted-foreground/70 max-w-md mx-auto">
+                    <p>No articles are currently available in the knowledge base.</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {articles.map((article) => (
+                <Card
+                  key={article.id}
+                  className="hover:border-primary/50 transition-colors cursor-pointer"
+                  onClick={() => handleArticleClick(article)}
+                >
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
-                          {article.type === "video" ? (
-                            <Video className="h-4 w-4 text-muted-foreground" />
-                          ) : (
-                            <FileText className="h-4 w-4 text-muted-foreground" />
-                          )}
+                          <FileText className="h-4 w-4 text-muted-foreground" />
                           <Badge variant="outline" className="text-xs">
-                            {article.category}
+                            {categoryLabels[article.category] || article.category}
                           </Badge>
                         </div>
                         <CardTitle className="text-base mb-1">{article.title}</CardTitle>
-                        <CardDescription className="text-xs">
-                          By {article.author} • {article.lastUpdated}
+                        {article.summary && (
+                          <CardDescription className="text-xs line-clamp-2 mt-1">
+                            {article.summary}
+                          </CardDescription>
+                        )}
+                        <CardDescription className="text-xs mt-2">
+                          Updated {new Date(article.updated_at).toLocaleDateString()}
                         </CardDescription>
                       </div>
                       <DropdownMenu>
@@ -315,29 +400,95 @@ export default function KnowledgePage() {
                           <Eye className="h-3 w-3" />
                           <span className="text-xs">Views</span>
                         </div>
-                        <p className="font-semibold">{article.views.toLocaleString()}</p>
+                        <p className="font-semibold">{article.view_count.toLocaleString()}</p>
                       </div>
                       <div>
                         <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
                           <ThumbsUp className="h-3 w-3" />
                           <span className="text-xs">Helpful</span>
                         </div>
-                        <p className="font-semibold">{article.helpful}</p>
+                        <p className="font-semibold">{article.helpful_count}</p>
                       </div>
                       <div>
                         <div className="flex items-center justify-center gap-1 text-muted-foreground mb-1">
                           <TrendingUp className="h-3 w-3" />
-                          <span className="text-xs">AI Used</span>
+                          <span className="text-xs">Usage</span>
                         </div>
-                        <p className="font-semibold">{article.aiSuggested}</p>
+                        <p className="font-semibold">
+                          {Math.round((article.helpful_count / Math.max(article.view_count, 1)) * 100)}%
+                        </p>
                       </div>
                     </div>
                   </CardContent>
                 </Card>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </ScrollArea>
+
+        {/* Article Detail Dialog */}
+        {selectedArticle && (
+          <Dialog open={!!selectedArticle} onOpenChange={() => setSelectedArticle(null)}>
+            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge variant="outline">
+                    {categoryLabels[selectedArticle.category] || selectedArticle.category}
+                  </Badge>
+                  {selectedArticle.subcategory && (
+                    <Badge variant="secondary" className="text-xs">
+                      {selectedArticle.subcategory}
+                    </Badge>
+                  )}
+                </div>
+                <DialogTitle className="text-xl">{selectedArticle.title}</DialogTitle>
+                {selectedArticle.summary && (
+                  <DialogDescription className="text-sm mt-2">{selectedArticle.summary}</DialogDescription>
+                )}
+              </DialogHeader>
+              <div className="py-4">
+                <div className="prose prose-sm max-w-none">
+                  <div className="whitespace-pre-wrap text-sm leading-relaxed">{selectedArticle.content}</div>
+                </div>
+                {selectedArticle.tags && selectedArticle.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
+                    {selectedArticle.tags.map((tag) => (
+                      <Badge key={tag} variant="outline" className="text-xs">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <DialogFooter className="flex items-center justify-between">
+                <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <Eye className="h-4 w-4" />
+                    {selectedArticle.view_count} views
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <ThumbsUp className="h-4 w-4" />
+                    {selectedArticle.helpful_count} helpful
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleHelpful(selectedArticle.id)}
+                  >
+                    <ThumbsUp className="h-4 w-4 mr-2" />
+                    Helpful
+                  </Button>
+                  <Button variant="outline" onClick={() => setSelectedArticle(null)}>
+                    Close
+                  </Button>
+                </div>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </div>
   )

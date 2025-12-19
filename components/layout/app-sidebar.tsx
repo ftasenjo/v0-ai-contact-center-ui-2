@@ -15,6 +15,7 @@ import {
   FileText,
   BookOpen,
   Zap,
+  Bell,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth, type UserRole } from "@/contexts/auth-context"
@@ -41,6 +42,7 @@ const navigation = [
   { name: "Reports", href: "/reports", icon: FileText },
   { name: "Knowledge", href: "/knowledge", icon: BookOpen },
   { name: "Workflows", href: "/workflows", icon: Zap },
+  { name: "Automation", href: "/automation", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings },
 ]
 

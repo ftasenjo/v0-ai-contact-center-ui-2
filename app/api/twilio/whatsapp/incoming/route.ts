@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
         
         // Audit: Supervisor failed
         writeAuditLog({
-          conversationId,
+          conversationId: conversationId || undefined,
           actorType: 'system',
           eventType: 'supervisor_failed',
           eventVersion: 1,
@@ -272,8 +272,18 @@ export async function POST(request: NextRequest) {
         eventVersion: 1,
         inputRedacted: { messageId },
         outputRedacted: {
-          intent: supervisorResult?.intent || null,
-          disposition_code: supervisorResult?.disposition_code || null,
+          intent:
+            supervisorResult &&
+            typeof supervisorResult === 'object' &&
+            'intent' in supervisorResult
+              ? (supervisorResult as any).intent || null
+              : null,
+          disposition_code:
+            supervisorResult &&
+            typeof supervisorResult === 'object' &&
+            'disposition_code' in supervisorResult
+              ? (supervisorResult as any).disposition_code || null
+              : null,
           message_sent: supervisorResult?.message_sent || false,
           errors_count: supervisorResult?.errors?.length || 0,
         },

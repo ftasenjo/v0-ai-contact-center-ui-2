@@ -2,15 +2,14 @@
  * Policy/Knowledge Base Tool
  * 
  * Provides access to banking policies, FAQs, and knowledge base.
- * Can be connected to RAG store or documentation system.
- * 
- * For now, this is a stub that returns general banking information.
- * TODO: Connect to actual RAG store / vector database / documentation system.
+ * Connected to cc_knowledge_base database table.
  */
 
 export interface PolicyKBResult {
   answer: string;
   sources?: string[];
+  articleId?: string;
+  title?: string;
 }
 
 /**
@@ -20,8 +19,46 @@ export interface PolicyKBResult {
  * @returns Answer and optional sources
  */
 export async function searchPolicyKB(query: string): Promise<PolicyKBResult> {
-  // TODO: connect to your RAG store / docs. For now: stub.
-  
+  try {
+    // Try to search the database knowledge base
+    const { supabaseServer } = await import("@/lib/supabase-server")
+    
+    const { data, error } = await supabaseServer.rpc("search_knowledge_base", {
+      search_query: query,
+    })
+
+    if (!error && data && data.length > 0) {
+      const topResult = data[0]
+      // Fetch full article content
+      const { data: article } = await supabaseServer
+        .from("cc_knowledge_base")
+        .select("content, title, summary")
+        .eq("id", topResult.id)
+        .single()
+
+      if (article) {
+        // Track view
+        await supabaseServer
+          .from("cc_knowledge_base")
+          .update({
+            view_count: (topResult.view_count || 0) + 1,
+            last_accessed_at: new Date().toISOString(),
+          })
+          .eq("id", topResult.id)
+
+        return {
+          answer: article.content || article.summary || "",
+          sources: [`${article.title} (KB Article)`],
+          articleId: topResult.id,
+          title: article.title,
+        }
+      }
+    }
+  } catch (error) {
+    console.warn("[policy-kb] Database search failed, using fallback:", error)
+  }
+
+  // Fallback to keyword-based responses if database search fails
   const normalizedQuery = query.toLowerCase();
   
   // Simple keyword-based responses (will be replaced with RAG later)

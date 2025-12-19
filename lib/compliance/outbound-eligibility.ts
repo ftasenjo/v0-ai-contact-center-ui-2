@@ -122,6 +122,15 @@ export async function evaluateOutboundEligibility(
 ): Promise<OutboundEligibilityResult> {
   const normalizedDestination = normalizeAddress(input.channel, input.destination);
   const reasons: OutboundEligibilityReasonCode[] = [];
+  let debugPrefs: {
+    loaded: boolean;
+    do_not_contact?: boolean;
+    allowed_channels_present?: boolean;
+    allowed_channels_includes_channel?: boolean;
+    quiet_hours_hit?: boolean;
+    timezone?: string;
+    prefs_error?: boolean;
+  } = { loaded: false };
 
   const resolved = await resolveBankCustomerId({
     bankCustomerId: input.bankCustomerId ?? null,
@@ -134,20 +143,27 @@ export async function evaluateOutboundEligibility(
   }
 
   if (resolved.bankCustomerId) {
-    const { data: prefs } = await supabaseServer
+    const { data: prefs, error: prefsError } = await supabaseServer
       .from('cc_comm_preferences')
-      .select('do_not_contact,allowed_channels,quiet_hours_start,quiet_hours_end,timezone,marketing_consent')
+      // NOTE: keep this list aligned with the actual DB schema (no phantom columns).
+      .select('do_not_contact,allowed_channels,quiet_hours_start,quiet_hours_end,timezone')
       .eq('bank_customer_id', resolved.bankCustomerId)
       .maybeSingle();
 
-    if (!prefs) {
+    if (prefsError || !prefs) {
+      debugPrefs = { loaded: false, prefs_error: !!prefsError };
       reasons.push('missing_consent');
     } else {
+      debugPrefs.loaded = true;
+      debugPrefs.do_not_contact = prefs.do_not_contact === true;
+
       if (prefs.do_not_contact === true) {
         reasons.push('DNC');
       }
 
       const allowed = parseAllowedChannels(prefs.allowed_channels);
+      debugPrefs.allowed_channels_present = !!allowed && allowed.length > 0;
+      debugPrefs.allowed_channels_includes_channel = !!allowed && allowed.includes(input.channel);
       if (!allowed || allowed.length === 0) {
         reasons.push('missing_consent');
       } else if (!allowed.includes(input.channel)) {
@@ -155,12 +171,14 @@ export async function evaluateOutboundEligibility(
       }
 
       const tz = prefs.timezone || input.timezoneHint || 'UTC';
+      debugPrefs.timezone = tz;
       const quiet = isInQuietHours({
         now: input.now,
         timeZone: tz,
         quietStart: prefs.quiet_hours_start,
         quietEnd: prefs.quiet_hours_end,
       });
+      debugPrefs.quiet_hours_hit = quiet;
 
       // Only bypass quiet hours for service_notice when explicitly flagged.
       const allowQuietOverride =
@@ -200,6 +218,7 @@ export async function evaluateOutboundEligibility(
       eligible,
       reasons,
       resolved_bank_customer_id: resolved.bankCustomerId,
+      prefs: debugPrefs,
     },
     success: true,
   });

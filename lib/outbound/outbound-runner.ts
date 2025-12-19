@@ -3,6 +3,8 @@ import { getTwilioClient } from '@/lib/twilio';
 import { callToolWithAudit } from '@/lib/tools/audit-wrapper';
 import { writeAuditLog } from '@/lib/banking-store';
 import { evaluateOutboundEligibility, type OutboundChannel } from '@/lib/compliance/outbound-eligibility';
+import { emitAutomationEvent } from '@/lib/automation/outbox';
+import { AutomationEventTypes } from '@/lib/automation/types';
 
 export type OutboundJobStatus = 'queued' | 'sent' | 'failed' | 'cancelled' | 'awaiting_verification';
 export type OutboundOutcomeCode =
@@ -92,7 +94,8 @@ function buildFinalMessage(job: OutboundJobRow, purpose?: CampaignPurpose | null
   const verified = payload.verification_state === 'verified';
 
   if (!verified && sensitive) {
-    return { text: buildVerifyPrompt(purpose), isSensitive: false };
+    // The prompt itself is non-sensitive, but the *job* is sensitive and must be gated.
+    return { text: buildVerifyPrompt(purpose), isSensitive: true };
   }
 
   if (finalText) return { text: finalText, isSensitive: sensitive };
@@ -133,6 +136,14 @@ async function insertAttempt(params: {
 }
 
 async function sendWhatsApp(job: OutboundJobRow, body: string) {
+  // Local/dev escape hatch: if Twilio isn't configured, fall back to a deterministic mock send.
+  if (
+    process.env.OUTBOUND_PROVIDER_MODE === 'mock' ||
+    !process.env.TWILIO_ACCOUNT_SID ||
+    !process.env.TWILIO_AUTH_TOKEN
+  ) {
+    return { sid: `mock-whatsapp-${job.id}-${Date.now()}`, status: 'sent' };
+  }
   const twilio = getTwilioClient();
   const fromWhatsApp =
     process.env.TWILIO_WHATSAPP_NUMBER ||
@@ -153,6 +164,9 @@ async function sendWhatsApp(job: OutboundJobRow, body: string) {
 }
 
 async function sendEmail(job: OutboundJobRow, subject: string, text: string, html?: string) {
+  if (process.env.OUTBOUND_PROVIDER_MODE === 'mock') {
+    return { queued: true, provider: 'mock' };
+  }
   return callToolWithAudit(
     'send_outbound_email',
     { to: job.target_address, job_id: job.id, subject, body_preview: text.slice(0, 80) },
@@ -177,6 +191,9 @@ async function sendEmail(job: OutboundJobRow, subject: string, text: string, htm
 }
 
 async function startVoiceCall(job: OutboundJobRow, sayText: string) {
+  if (process.env.OUTBOUND_PROVIDER_MODE === 'mock') {
+    return { callSid: `mock-voice-${job.id}-${Date.now()}`, status: 'queued' };
+  }
   const twilio = getTwilioClient();
   const from = process.env.TWILIO_PHONE_NUMBER;
   if (!from) throw new Error('Missing TWILIO_PHONE_NUMBER');
@@ -286,6 +303,26 @@ async function scheduleRetry(params: {
         updated_at: params.now.toISOString(),
       })
       .eq('id', params.job.id);
+
+    // Step 11: Emit "ops inbox" event (best-effort; must never break outbound flow)
+    try {
+      await emitAutomationEvent({
+        eventType: AutomationEventTypes.OutboundFailedMaxAttempts,
+        dedupeKey: `outbound_failed_max_attempts:${params.job.id}`,
+        payload: {
+          outbound_job_id: params.job.id,
+          channel: params.job.channel,
+          target_hint: params.job.target_address,
+          attempt_count: params.newAttemptCount,
+          max_attempts: params.job.max_attempts || defaultMaxAttempts(params.job.channel),
+          last_error_code: params.errorCode,
+          last_error_message: params.errorMessage,
+          at: params.now.toISOString(),
+        },
+      });
+    } catch {
+      // Non-fatal
+    }
     return;
   }
 

@@ -140,8 +140,19 @@ function redactString(str: string, context?: string): string {
   });
 
   // Twilio/API secrets (long alphanumeric strings)
-  // Match: "AC1234567890abcdef..." (Twilio Account SID pattern)
-  redacted = redacted.replace(/\b[A-Z]{2}[a-zA-Z0-9]{30,}\b/g, '[API_SECRET_REDACTED]');
+  //
+  // IMPORTANT:
+  // Twilio resource SIDs (AccountSid, CallSid, MessageSid, etc.) are identifiers, not secrets.
+  // We intentionally DO NOT redact them because they are required for deterministic DB-only
+  // debugging (e.g. proving `twilio_stream_connected` for a specific CallSid).
+  //
+  // If you truly need to redact secrets, prefer redacting by key name (token/key/secret)
+  // or by known secret formats rather than blanket 2-letter prefixes.
+  const looksLikeTwilioSid = /^(?:AC|CA|SM|PN|MG|CH|AP|AL|BK|CJ|CL|CR|CS|CV|DC|DJ|DU|EH|EM|ES|FK|FO|FT|FW|HF|HP|HS|IM|IV|KI|KS|LT|MB|ME|MK|MM|MR|MS|NE|NH|NO|NT|NV|OC|PC|PM|QR|RD|RE|RG|RM|RN|RT|SA|SC|SE|SL|SP|ST|SV|TC|TS|VE|VP|WA|WS)[0-9a-f]{32}$/i;
+  if (!looksLikeTwilioSid.test(redacted)) {
+    // Conservative fallback: redact very long opaque strings that are unlikely to be user content.
+    redacted = redacted.replace(/\b[a-zA-Z0-9_\-]{48,}\b/g, '[API_SECRET_REDACTED]');
+  }
 
   // Credit card expiry (MM/YY or MM/YYYY)
   redacted = redacted.replace(/\b(0[1-9]|1[0-2])\/(\d{2,4})\b/g, '[EXPIRY_REDACTED]');

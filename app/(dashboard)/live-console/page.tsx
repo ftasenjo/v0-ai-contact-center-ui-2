@@ -70,20 +70,15 @@ export default function LiveConsolePage() {
         if (data.success) {
           // Only show real calls - no demo data
           setLiveCallsData(data.calls || []);
-          
-          // Update selected call
-          if (data.calls && data.calls.length > 0) {
-            if (!selectedCall || !data.calls.find((c: LiveCall) => c.id === selectedCall.id)) {
-              setSelectedCall(data.calls[0]);
-            } else {
-              // Update existing selected call
-              const updated = data.calls.find((c: LiveCall) => c.id === selectedCall.id);
-              if (updated) setSelectedCall(updated);
-            }
-          } else {
-            // No active calls - clear selection
-            setSelectedCall(null);
-          }
+
+          // Update selected call (functional form to avoid stale closure)
+          setSelectedCall((prev) => {
+            const calls: LiveCall[] = data.calls || [];
+            if (calls.length === 0) return null;
+            if (!prev) return calls[0];
+            const updated = calls.find((c) => c.id === prev.id);
+            return updated || calls[0];
+          });
         } else {
           // No calls or error - show empty
           setLiveCallsData([]);
@@ -122,19 +117,7 @@ export default function LiveConsolePage() {
     atRisk: liveCallsData.filter((c) => c.riskFlags.length > 0).length,
   }
 
-  // Update selected call when data changes
-  useEffect(() => {
-    if (selectedCall && liveCallsData.length > 0) {
-      const updated = liveCallsData.find(c => c.id === selectedCall.id);
-      if (updated) {
-        setSelectedCall(updated);
-      } else if (liveCallsData[0]) {
-        setSelectedCall(liveCallsData[0]);
-      }
-    } else if (!selectedCall && liveCallsData.length > 0) {
-      setSelectedCall(liveCallsData[0]);
-    }
-  }, [liveCallsData])
+  // Selection is maintained inside the polling fetch; avoid duplicate selection effects.
 
   return (
     <div className="flex h-full">

@@ -66,11 +66,30 @@ export async function POST(request: NextRequest) {
     const vapiPhoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
     const vapiAssistantId = process.env.VAPI_ASSISTANT_ID;
     const vapiTwilioStreamUrl = process.env.VAPI_TWILIO_STREAM_URL || 'wss://api.vapi.ai/stream';
+    const vapiPublicApiKey =
+      process.env.VAPI_PUBLIC_API_KEY ||
+      process.env.VAPI_PUBLIC_KEY ||
+      process.env.NEXT_PUBLIC_VAPI_PUBLIC_API_KEY ||
+      null;
+    // Some Vapi stream configurations require a WebSocket-capable key.
+    // If provided, prefer VAPI_STREAM_API_KEY; otherwise fall back to VAPI_API_KEY (private),
+    // then PUBLIC key.
+    const vapiStreamApiKey =
+      process.env.VAPI_STREAM_API_KEY ||
+      process.env.VAPI_API_KEY ||
+      vapiPublicApiKey;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
     // Create TwiML response
     const twiml = new twilio.twiml.VoiceResponse();
 
     if (useVapi && vapiPhoneNumberId && vapiAssistantId) {
+      // Always give the caller an audible acknowledgement (helps debugging when streaming fails)
+      twiml.say(
+        { voice: 'alice', language: 'en-US' },
+        'Connecting you now. Please hold.'
+      );
+
       /**
        * Step 9 (voice scaffolding): Twilio Voice → Vapi streaming bridge
        *
@@ -85,13 +104,38 @@ export async function POST(request: NextRequest) {
       // This repo currently uses Vapi metadata in webhook processing to map transcripts back to Twilio CallSid.
       // Attach call identifiers so we can map Vapi → Twilio → cc_conversations reliably.
       const streamUrl = new URL(vapiTwilioStreamUrl);
+      // Vapi needs these to select the assistant/phone number configuration.
+      // (Even if Vapi also infers via other metadata, passing explicitly is safest.)
+      streamUrl.searchParams.set('assistantId', vapiAssistantId);
+      streamUrl.searchParams.set('phoneNumberId', vapiPhoneNumberId);
+      // Some Vapi deployments require an apiKey (and sometimes organizationId) at the stream layer.
+      // Use the PUBLIC key here because Twilio can't keep secrets in URL/query params.
+      if (vapiStreamApiKey) streamUrl.searchParams.set('apiKey', vapiStreamApiKey);
+      try {
+        const { getVapiOrgId } = await import('@/lib/vapi');
+        const orgId = await getVapiOrgId();
+        if (orgId) streamUrl.searchParams.set('organizationId', orgId);
+      } catch {
+        // ignore
+      }
       streamUrl.searchParams.set('twilioCallSid', callSid);
       streamUrl.searchParams.set('twilioFrom', from);
       streamUrl.searchParams.set('twilioTo', to);
 
-      const stream = connect.stream({ url: streamUrl.toString() });
+      const stream = connect.stream({
+        url: streamUrl.toString(),
+        // Deterministic stream connectivity callbacks → DB audit + system transcripts
+        statusCallback: `${appUrl}/api/twilio/stream-webhook`,
+        statusCallbackMethod: 'POST',
+        // @ts-ignore - Twilio typings vary; attribute exists in TwiML
+        statusCallbackEvent: ['start', 'stop', 'error'],
+      });
       // Also include as Twilio stream parameters (some receivers prefer this)
       // @ts-ignore - twilio typings vary; parameter() exists at runtime
+      stream.parameter({ name: 'assistantId', value: vapiAssistantId });
+      // @ts-ignore
+      stream.parameter({ name: 'phoneNumberId', value: vapiPhoneNumberId });
+      // @ts-ignore
       stream.parameter({ name: 'twilioCallSid', value: callSid });
       // @ts-ignore
       stream.parameter({ name: 'twilioFrom', value: from });

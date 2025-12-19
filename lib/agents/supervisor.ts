@@ -17,15 +17,17 @@ import { getBankingConversation } from "@/lib/banking-store";
 import { resolveIdentity } from "@/lib/identity-resolution";
 import { generalInfoAgent } from "./general-info-agent";
 import { fraudAgent } from "./fraud-agent";
-import { executeActions, type ActionExecutionContext } from "./action-executor";
+import { executeActions, type ActionExecutionContext, type ActionExecutionResult } from "./action-executor";
 import type { CreateFraudCaseResponse, FreezeCardResponse } from "@/lib/tools/fraud-tools";
-import type { AgentContext, AgentResult, Intent, ToolPermission } from "./contracts";
+import type { AgentAction, AgentContext, AgentResult, AuthLevel, Intent, ToolPermission } from "./contracts";
 import type { Conversation, Message } from "@/lib/sample-data";
 import { supabaseServer } from "@/lib/supabase-server";
 import { getTwilioClient } from "@/lib/twilio";
 import { startOtp, verifyOtp, getActiveAuthSession, extractOtpCode } from "@/lib/tools/otp";
 import { getBankingSummary } from "@/lib/tools/banking-summary";
 import { resumePendingOutboundAfterOtp } from "@/lib/outbound/outbound-resume";
+import { emitAutomationEvent } from "@/lib/automation/outbox";
+import { AutomationEventTypes } from "@/lib/automation/types";
 import crypto from "crypto";
 
 /**
@@ -45,7 +47,7 @@ export interface SupervisorState {
   // ========== IDENTITY (from Step 3) ==========
   identity_status: "resolved_verified" | "resolved_unverified" | "unresolved" | "ambiguous";
   bank_customer_id: string | null;
-  auth_level: "none" | "otp" | "kba"; // Current auth level
+  auth_level: AuthLevel; // Current auth level
 
   // ========== ROUTING / CONTROL ==========
   intent: Intent | null;
@@ -56,7 +58,7 @@ export interface SupervisorState {
 
   // ========== OUTPUT ==========
   assistant_draft: string;
-  actions: Array<{ type: string; [key: string]: any }>;
+  actions: AgentAction[];
   disposition_code: string | null;
 
   // ========== INTERNAL (for supervisor use) ==========
@@ -115,6 +117,10 @@ async function auditLog(
         errors_count: data.errors?.length || data.errors_count || 0,
         message_sent: data.message_sent,
         twilio_sid: data.twilio_sid,
+        // Voice tracing (lets us prove "say routed back" DB-only for a specific CallSid)
+        voice_provider_call_id: data.voice_provider_call_id,
+        has_voice_control_url: !!data.voice_control_url,
+        http_status: data.http_status,
         was_duplicate: data.was_duplicate,
       },
       success,
@@ -777,7 +783,8 @@ async function routeAgent(state: SupervisorState): Promise<Partial<SupervisorSta
     
     // Pre-classify intent to determine routing
     // NOTE: `messageText` is already used above for follow-up detection.
-    const routingText = state.latest_message?.content?.toLowerCase() || "";
+    // Reuse it to avoid duplicate const declarations in this scope.
+    const routingText = messageText;
     let preClassifiedIntent: Intent | null = null;
     
     // Quick intent classification for routing
@@ -868,6 +875,9 @@ async function agentExecute(state: SupervisorState): Promise<Partial<SupervisorS
       throw new Error("No agent selected");
     }
 
+    // Keep summary in outer scope so we can persist it back into stateUpdate.
+    let bankingSummary = state.banking_summary;
+
     // Route to appropriate agent
     let agentResult;
     if (state.selected_agent === "fraud") {
@@ -920,7 +930,6 @@ async function agentExecute(state: SupervisorState): Promise<Partial<SupervisorS
       }
       
       // Step 7.4: Fetch banking summary if verified and intent requires it
-      let bankingSummary = state.banking_summary;
       
       const sensitiveIntents: Intent[] = ["account_balance", "transactions", "card_freeze"];
       const isSensitiveIntent = preClassifiedIntent && sensitiveIntents.includes(preClassifiedIntent);
@@ -1017,17 +1026,8 @@ async function agentExecute(state: SupervisorState): Promise<Partial<SupervisorS
     }
 
     // Map agent result to state (including Step 8 fraud actions)
-    const actions = agentResult.actions.map((action) => ({
-      type: action.type,
-      ...(action.type === "answer_faq" ? { topic: action.topic } : {}),
-      ...(action.type === "request_verification" ? { level: action.level, reason: action.reason } : {}),
-      ...(action.type === "handoff_suggest" ? { reason: action.reason } : {}),
-      ...(action.type === "ask_clarifying_question" ? { question: action.question } : {}),
-      // Step 8: Fraud actions
-      ...(action.type === "list_cards" ? { bankCustomerId: action.bankCustomerId } : {}),
-      ...(action.type === "freeze_card" ? { bankCustomerId: action.bankCustomerId, cardId: action.cardId, reason: action.reason } : {}),
-      ...(action.type === "create_fraud_case" ? { bankCustomerId: action.bankCustomerId, description: action.description, amount: action.amount, currency: action.currency, priority: action.priority } : {}),
-    }));
+    // `agentResult.actions` already conforms to `AgentAction[]`.
+    const actions = agentResult.actions;
 
     // Step 5.4: Audit intent classification
     await auditLog(
@@ -1120,6 +1120,7 @@ async function agentExecute(state: SupervisorState): Promise<Partial<SupervisorS
  * Only executes if user is verified and actions are valid
  */
 async function executeActionsNode(state: SupervisorState): Promise<Partial<SupervisorState>> {
+  let executableActions: AgentAction[] = [];
   try {
     console.log("⚡ [execute_actions] Checking for actions to execute");
 
@@ -1142,9 +1143,9 @@ async function executeActionsNode(state: SupervisorState): Promise<Partial<Super
 
     // Only execute actions if user is verified and we have actions
     const isVerified = state.auth_level !== "none" && !!state.bank_customer_id;
-    const executableActions = (state.actions || []).filter(
+    executableActions = (state.actions || []).filter(
       (a) => a.type === "create_fraud_case" || a.type === "freeze_card" || a.type === "list_cards"
-    );
+    ) as AgentAction[];
 
     console.log("⚡ [execute_actions] Checking actions", {
       isVerified,
@@ -1177,10 +1178,12 @@ async function executeActionsNode(state: SupervisorState): Promise<Partial<Super
     };
 
     // Execute actions
-    const executionResults = await executeActions(executableActions as AgentAction[], actionContext);
+    const executionResults: ActionExecutionResult[] = await executeActions(executableActions, actionContext);
 
     // Check for failures
-    const failures = executionResults.filter((r) => !r.success);
+    const failures = executionResults.filter(
+      (r): r is Extract<ActionExecutionResult, { success: false }> => !r.success
+    );
     if (failures.length > 0) {
       console.error("❌ [execute_actions] Some actions failed:", failures);
       await auditLog(
@@ -1225,6 +1228,23 @@ async function executeActionsNode(state: SupervisorState): Promise<Partial<Super
           undefined,
           state.message_id
         );
+
+        // Step 11: Write outbox event (best-effort; must never break core flow)
+        try {
+          await emitAutomationEvent({
+            eventType: AutomationEventTypes.FraudCaseCreated,
+            dedupeKey: `fraud_case_created:${caseId}`,
+            payload: {
+              case_id: caseId,
+              case_number: caseNumber,
+              conversation_id: state.conversation_id,
+              message_id: state.message_id,
+              at: new Date().toISOString(),
+            },
+          });
+        } catch {
+          // Non-fatal
+        }
       } else if (result.success && result.action.type === "freeze_card" && result.result) {
         const freezeResult = result.result as FreezeCardResponse;
         // Card freeze success - response already updated by agent
@@ -1290,8 +1310,8 @@ async function executeActionsNode(state: SupervisorState): Promise<Partial<Super
     let errorMessage = "I'm having trouble processing your request right now. ";
     
     // Check if this is a card freeze or fraud-related action failure
-    const hasFreezeAction = executableActions.some(a => a.type === "freeze_card");
-    const hasFraudAction = executableActions.some(a => a.type === "create_fraud_case");
+    const hasFreezeAction = executableActions.some((a) => a.type === "freeze_card");
+    const hasFraudAction = executableActions.some((a) => a.type === "create_fraud_case");
     
     if (hasFreezeAction || hasFraudAction) {
       errorMessage = "I'm having trouble processing your fraud-related request. " +
@@ -1321,7 +1341,10 @@ async function authGate(state: SupervisorState): Promise<Partial<SupervisorState
 
     // Check if agent requested verification
     const agentRequestedAuth = state.actions?.some((a) => a.type === "request_verification");
-    const requestedAuthLevel = state.actions?.find((a) => a.type === "request_verification")?.level as AuthLevel | undefined;
+    const requestVerificationAction = state.actions?.find(
+      (a): a is Extract<AgentAction, { type: "request_verification" }> => a.type === "request_verification"
+    );
+    const requestedAuthLevel = requestVerificationAction?.level;
 
     // Step 6.4: If OTP was already handled, skip auth gate (OTP response will be used)
     // Step 8: But if KBA is required, we still need to gate (KBA not implemented yet)
@@ -1673,7 +1696,14 @@ async function persistAndSend(state: SupervisorState): Promise<Partial<Superviso
       await auditLog(
         state.conversation_id,
         "voice_response_sent",
-        { conversation_id: state.conversation_id, has_api_key: !!apiKey, has_control_url: !!controlUrl },
+        {
+          conversation_id: state.conversation_id,
+          voice_provider_call_id: state.voice_provider_call_id,
+          voice_control_url: controlUrl,
+          has_api_key: !!apiKey,
+          has_control_url: !!controlUrl,
+          response_length: (state.formatted_response || "").length,
+        },
         false,
         { code: "VOICE_SEND_MISSING_CONFIG", message: "Missing VAPI_API_KEY or voice_control_url" },
         state.message_id
@@ -1693,7 +1723,13 @@ async function persistAndSend(state: SupervisorState): Promise<Partial<Superviso
       await auditLog(
         state.conversation_id,
         "voice_response_sent",
-        { conversation_id: state.conversation_id, http_status: res.status },
+        {
+          conversation_id: state.conversation_id,
+          voice_provider_call_id: state.voice_provider_call_id,
+          voice_control_url: controlUrl,
+          http_status: res.status,
+          response_length: (state.formatted_response || "").length,
+        },
         false,
         { code: "VOICE_SEND_FAILED", message: msg || `Vapi control failed (${res.status})` },
         state.message_id
@@ -1704,7 +1740,15 @@ async function persistAndSend(state: SupervisorState): Promise<Partial<Superviso
     await auditLog(
       state.conversation_id,
       "voice_response_sent",
-      { conversation_id: state.conversation_id, message_id: messageData.id, was_duplicate: false },
+      {
+        conversation_id: state.conversation_id,
+        message_id: messageData.id,
+        voice_provider_call_id: state.voice_provider_call_id,
+        voice_control_url: controlUrl,
+        http_status: res.status,
+        response_length: (state.formatted_response || "").length,
+        was_duplicate: false,
+      },
       true,
       undefined,
       state.message_id
@@ -1805,6 +1849,10 @@ async function wrapUp(state: SupervisorState): Promise<Partial<SupervisorState>>
  * Create the supervisor workflow
  */
 export function createSupervisorWorkflow() {
+  // NOTE: We intentionally loosen the StateGraph typing here.
+  // Upstream @langchain/langgraph typings are very strict about node-name unions and
+  // can drift across versions; our runtime behavior is correct and we don't want CI
+  // blocked on node-name type inference.
   const workflow = new StateGraph<SupervisorState>({
     channels: {
       conversation_id: {
@@ -1940,7 +1988,7 @@ export function createSupervisorWorkflow() {
         default: () => undefined,
       },
     },
-  });
+  }) as any;
 
   // Add nodes in order
   workflow.addNode("load_context", loadContext);

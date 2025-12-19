@@ -17,25 +17,67 @@ export async function POST(request: NextRequest) {
     // Create TwiML response
     const twiml = new twilio.twiml.VoiceResponse();
 
-    // For outbound calls, you might want to:
-    // 1. Connect directly to the agent
-    // 2. Play a message first
-    // 3. Record the call
+    // Step 9 (voice): Optional Twilio Voice → Vapi streaming bridge for outbound calls
+    const useVapi = process.env.USE_VAPI === 'true';
+    const vapiPhoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
+    const vapiAssistantId = process.env.VAPI_ASSISTANT_ID;
+    const vapiTwilioStreamUrl = process.env.VAPI_TWILIO_STREAM_URL || 'wss://api.vapi.ai/stream';
+    const vapiPublicApiKey =
+      process.env.VAPI_PUBLIC_API_KEY ||
+      process.env.VAPI_PUBLIC_KEY ||
+      process.env.NEXT_PUBLIC_VAPI_PUBLIC_API_KEY ||
+      null;
+    const vapiStreamApiKey =
+      process.env.VAPI_STREAM_API_KEY ||
+      process.env.VAPI_API_KEY ||
+      vapiPublicApiKey;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-    twiml.say(
-      {
-        voice: 'alice',
-        language: 'en-US',
-      },
-      'Hello, this is a call from our contact center. Please hold while we connect you.'
-    );
+    if (useVapi && vapiPhoneNumberId && vapiAssistantId) {
+      const connect = twiml.connect();
+      const streamUrl = new URL(vapiTwilioStreamUrl);
+      streamUrl.searchParams.set('assistantId', vapiAssistantId);
+      streamUrl.searchParams.set('phoneNumberId', vapiPhoneNumberId);
+      if (vapiStreamApiKey) streamUrl.searchParams.set('apiKey', vapiStreamApiKey);
+      try {
+        const { getVapiOrgId } = await import('@/lib/vapi');
+        const orgId = await getVapiOrgId();
+        if (orgId) streamUrl.searchParams.set('organizationId', orgId);
+      } catch {
+        // ignore
+      }
+      streamUrl.searchParams.set('twilioCallSid', callSid);
+      streamUrl.searchParams.set('twilioFrom', from);
+      streamUrl.searchParams.set('twilioTo', to);
 
-    // Example: Dial an agent or external number
-    // const dial = twiml.dial();
-    // dial.number('+1234567890'); // Agent's phone number
+      const stream = connect.stream({
+        url: streamUrl.toString(),
+        statusCallback: `${appUrl}/api/twilio/stream-webhook`,
+        statusCallbackMethod: 'POST',
+        // @ts-ignore - Twilio typings vary; attribute exists in TwiML
+        statusCallbackEvent: ['start', 'stop', 'error'],
+      });
+      // @ts-ignore - twilio typings vary; parameter() exists at runtime
+      stream.parameter({ name: 'assistantId', value: vapiAssistantId });
+      // @ts-ignore
+      stream.parameter({ name: 'phoneNumberId', value: vapiPhoneNumberId });
+      // @ts-ignore
+      stream.parameter({ name: 'twilioCallSid', value: callSid });
+      // @ts-ignore
+      stream.parameter({ name: 'twilioFrom', value: from });
+      // @ts-ignore
+      stream.parameter({ name: 'twilioTo', value: to });
 
-    // For now, we'll just play a message
-    // You can customize this based on your needs
+      twiml.pause({ length: 1 });
+    } else {
+      twiml.say(
+        {
+          voice: 'alice',
+          language: 'en-US',
+        },
+        'Hello, this is a call from our contact center. Please hold while we connect you.'
+      );
+    }
 
     return new NextResponse(twiml.toString(), {
       status: 200,

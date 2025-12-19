@@ -31,7 +31,9 @@ export default function DashboardLayout({
       <AppSidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         <AppHeader />
-        <main className="flex-1 overflow-auto bg-muted/30">{children}</main>
+        <main className="flex-1 overflow-auto bg-muted/30">
+          {children}
+        </main>
       </div>
     </div>
   )

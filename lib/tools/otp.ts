@@ -68,6 +68,36 @@ export async function startOtp(
     'start_otp',
     { phone: e164Phone },
     async (input) => {
+      // Dev/CI escape hatch: allow deterministic OTP without Twilio Verify.
+      // Use ONLY for local demos/tests.
+      if (process.env.OTP_PROVIDER_MODE === 'mock' || !VERIFY_SERVICE_SID) {
+        const sid = `mock-verify-${auditContext.conversationId}-${Date.now()}`;
+
+        const expiresAt = new Date();
+        expiresAt.setMinutes(expiresAt.getMinutes() + 10);
+
+        await supabaseServer
+          .from('cc_auth_sessions')
+          .insert({
+            conversation_id: auditContext.conversationId,
+            bank_customer_id: auditContext.bankCustomerId || null,
+            method: 'otp',
+            status: 'sent',
+            channel: auditContext.channel,
+            destination: maskPhoneNumber(input.phone),
+            provider: 'mock',
+            provider_request_id: sid,
+            attempts: 0,
+            max_attempts: 3,
+            expires_at: expiresAt.toISOString(),
+          })
+          .select('id')
+          .maybeSingle();
+
+        // Code is fixed for mock mode (not stored): 000000
+        return { sid, status: 'pending' };
+      }
+
       if (!VERIFY_SERVICE_SID) {
         throw new Error('TWILIO_VERIFY_SERVICE_SID is not configured');
       }
@@ -147,6 +177,56 @@ export async function verifyOtp(
     'verify_otp',
     { phone: e164Phone, codeLength: code.length }, // Don't log actual code
     async (input) => {
+      // Dev/CI escape hatch: deterministic OTP without Twilio Verify.
+      if (process.env.OTP_PROVIDER_MODE === 'mock' || !VERIFY_SERVICE_SID) {
+        const { data: activeSession } = await supabaseServer
+          .from('cc_auth_sessions')
+          .select('*')
+          .eq('conversation_id', auditContext.conversationId)
+          .eq('method', 'otp')
+          .eq('status', 'sent')
+          .gt('expires_at', new Date().toISOString())
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (!activeSession) {
+          return { status: 'no_session', valid: false };
+        }
+
+        const newAttempts = (activeSession.attempts || 0) + 1;
+        const isValid = code === '000000';
+
+        if (isValid) {
+          await supabaseServer
+            .from('cc_auth_sessions')
+            .update({
+              status: 'verified',
+              verified_at: new Date().toISOString(),
+              attempts: newAttempts,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', activeSession.id);
+          return { status: 'verified', valid: true };
+        }
+
+        const isMaxAttempts = newAttempts >= (activeSession.max_attempts || 3);
+        await supabaseServer
+          .from('cc_auth_sessions')
+          .update({
+            attempts: newAttempts,
+            status: isMaxAttempts ? 'failed' : 'sent',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', activeSession.id);
+
+        return {
+          status: 'invalid',
+          valid: false,
+          attemptsRemaining: Math.max(0, (activeSession.max_attempts || 3) - newAttempts),
+        };
+      }
+
       if (!VERIFY_SERVICE_SID) {
         throw new Error('TWILIO_VERIFY_SERVICE_SID is not configured');
       }

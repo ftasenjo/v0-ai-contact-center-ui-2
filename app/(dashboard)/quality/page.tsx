@@ -22,8 +22,10 @@ import {
   CheckCircle,
   AlertTriangle,
   Lightbulb,
+  BarChart3,
 } from "lucide-react"
 import { QAReviewPanel } from "@/components/quality/qa-review-panel"
+import { AgentPerformanceDashboard } from "@/components/quality/agent-performance-dashboard"
 
 const reviewQueue = [
   {
@@ -136,6 +138,7 @@ export default function QualityPage() {
   const [selectedReview, setSelectedReview] = useState(reviewQueue[0])
   const [searchQuery, setSearchQuery] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [activeTab, setActiveTab] = useState<"reviews" | "performance">("reviews")
 
   const filteredQueue = reviewQueue.filter((review) => {
     const matchesSearch =
@@ -154,22 +157,43 @@ export default function QualityPage() {
   }
 
   return (
-    <div className="flex h-full">
-      {/* Left Panel - Review Queue */}
-      <div className="w-96 border-r border-border bg-card flex flex-col">
-        <Tabs defaultValue="reviews" className="flex-1 flex flex-col">
-          <div className="p-4 border-b border-border">
-            <TabsList className="w-full">
-              <TabsTrigger value="reviews" className="flex-1">
+    <div className="flex h-full flex-col">
+      {/* Top Tabs */}
+      <div className="border-b border-border bg-card">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)}>
+          <div className="px-6 py-3">
+            <TabsList>
+              <TabsTrigger value="reviews">
                 <Award className="h-4 w-4 mr-2" />
                 QA Reviews
               </TabsTrigger>
-              <TabsTrigger value="coaching" className="flex-1">
-                <Lightbulb className="h-4 w-4 mr-2" />
-                Coaching
+              <TabsTrigger value="performance">
+                <BarChart3 className="h-4 w-4 mr-2" />
+                Agent Performance
               </TabsTrigger>
             </TabsList>
           </div>
+        </Tabs>
+      </div>
+
+      {/* Content */}
+      {activeTab === "reviews" ? (
+        <div className="flex flex-1 overflow-hidden">
+          {/* Left Panel - Review Queue */}
+          <div className="w-96 border-r border-border bg-card flex flex-col">
+            <Tabs defaultValue="reviews" className="flex-1 flex flex-col">
+              <div className="p-4 border-b border-border">
+                <TabsList className="w-full">
+                  <TabsTrigger value="reviews" className="flex-1">
+                    <Award className="h-4 w-4 mr-2" />
+                    Reviews
+                  </TabsTrigger>
+                  <TabsTrigger value="coaching" className="flex-1">
+                    <Lightbulb className="h-4 w-4 mr-2" />
+                    Coaching
+                  </TabsTrigger>
+                </TabsList>
+              </div>
 
           <TabsContent value="reviews" className="flex-1 flex flex-col m-0">
             {/* Stats */}
@@ -389,20 +413,26 @@ export default function QualityPage() {
         </Tabs>
       </div>
 
-      {/* Right Panel - Review Details */}
-      <div className="flex-1">
-        {selectedReview ? (
-          <QAReviewPanel review={selectedReview} />
-        ) : (
-          <div className="flex-1 flex items-center justify-center h-full">
-            <div className="text-center">
-              <Award className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-muted-foreground">No review selected</h3>
-              <p className="text-sm text-muted-foreground/70">Select a conversation to review</p>
-            </div>
+          {/* Right Panel - Review Details */}
+          <div className="flex-1">
+            {selectedReview ? (
+              <QAReviewPanel review={selectedReview} />
+            ) : (
+              <div className="flex-1 flex items-center justify-center h-full">
+                <div className="text-center">
+                  <Award className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                  <h3 className="text-lg font-medium text-muted-foreground">No review selected</h3>
+                  <p className="text-sm text-muted-foreground/70">Select a conversation to review</p>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-auto p-6">
+          <AgentPerformanceDashboard />
+        </div>
+      )}
     </div>
   )
 }

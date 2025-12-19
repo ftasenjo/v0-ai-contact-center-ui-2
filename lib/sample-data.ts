@@ -30,6 +30,8 @@ export interface Conversation {
   aiConfidence: number
   escalationRisk: boolean
   tags: string[]
+  // Optional metadata bag for feature flags / workflow notes, etc.
+  metadata?: Record<string, unknown>
 }
 
 export interface Message {
@@ -37,6 +39,10 @@ export interface Message {
   type: "customer" | "agent" | "ai" | "system"
   content: string
   timestamp: Date
+  // Optional fields used by Supabase-backed message rows / ingestion payloads
+  body_text?: string
+  text?: string
+  direction?: "inbound" | "outbound"
   sentiment?: "positive" | "neutral" | "negative"
   confidence?: number
   isTranscript?: boolean

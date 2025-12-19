@@ -82,7 +82,19 @@ export async function resumePendingOutboundAfterOtp(params: {
       success: true,
     });
 
-    await processOutboundJob(job, now);
+    // IMPORTANT: `processOutboundJob` uses the in-memory job payload.
+    // Ensure the object we pass reflects the verified state to prevent re-sending VERIFY prompts.
+    const patchedJob = {
+      ...job,
+      status: 'queued',
+      next_attempt_at: now.toISOString(),
+      payload_json: {
+        ...(job.payload_json || {}),
+        verification_state: 'verified',
+      },
+    };
+
+    await processOutboundJob(patchedJob, now);
     resumed += 1;
   }
 

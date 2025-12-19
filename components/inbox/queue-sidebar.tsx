@@ -22,13 +22,12 @@ import {
   Globe,
 } from "lucide-react"
 
-const queues = [
-  { id: "all", name: "All Conversations", count: 55, icon: Inbox },
-  { id: "enterprise", name: "Enterprise Support", count: 12, icon: AlertTriangle },
-  { id: "sales", name: "Sales Support", count: 18, icon: Phone },
-  { id: "billing", name: "Billing", count: 8, icon: Mail },
-  { id: "technical", name: "Technical Support", count: 17, icon: MessageSquare },
-]
+interface Queue {
+  id: string
+  name: string
+  count?: number
+  icon: typeof Inbox
+}
 
 const channels = [
   { id: "voice", label: "Voice", icon: Phone, count: 8 },
@@ -63,13 +62,96 @@ const languages = [
   { id: "de", label: "German", count: 2 },
 ]
 
-export function QueueSidebar() {
-  const [selectedQueue, setSelectedQueue] = useState("all")
-  const [selectedChannels, setSelectedChannels] = useState<string[]>([])
-  const [selectedPriorities, setSelectedPriorities] = useState<string[]>([])
-  const [selectedSentiments, setSelectedSentiments] = useState<string[]>([])
-  const [selectedSLA, setSelectedSLA] = useState<string[]>([])
-  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([])
+interface QueueSidebarProps {
+  selectedQueue?: string
+  onQueueChange?: (queue: string) => void
+  selectedChannels?: string[]
+  onChannelsChange?: (channels: string[]) => void
+  selectedPriorities?: string[]
+  onPrioritiesChange?: (priorities: string[]) => void
+  selectedSentiments?: string[]
+  onSentimentsChange?: (sentiments: string[]) => void
+  selectedSLA?: string[]
+  onSLAChange?: (sla: string[]) => void
+  selectedLanguages?: string[]
+  onLanguagesChange?: (languages: string[]) => void
+  conversationCounts?: {
+    all?: number
+    enterprise?: number
+    sales?: number
+    billing?: number
+    technical?: number
+  }
+  channelCounts?: {
+    voice?: number
+    chat?: number
+    email?: number
+    whatsapp?: number
+  }
+  languageCounts?: {
+    en?: number
+    es?: number
+    fr?: number
+    de?: number
+  }
+}
+
+export function QueueSidebar({
+  selectedQueue: externalSelectedQueue,
+  onQueueChange,
+  selectedChannels: externalSelectedChannels,
+  onChannelsChange,
+  selectedPriorities: externalSelectedPriorities,
+  onPrioritiesChange,
+  selectedSentiments: externalSelectedSentiments,
+  onSentimentsChange,
+  selectedSLA: externalSelectedSLA,
+  onSLAChange,
+  selectedLanguages: externalSelectedLanguages,
+  onLanguagesChange,
+  conversationCounts,
+  channelCounts,
+  languageCounts,
+}: QueueSidebarProps = {}) {
+  const queues: Queue[] = [
+    { id: "all", name: "All Conversations", count: conversationCounts?.all, icon: Inbox },
+    { id: "enterprise", name: "Enterprise Support", count: conversationCounts?.enterprise, icon: AlertTriangle },
+    { id: "sales", name: "Sales Support", count: conversationCounts?.sales, icon: Phone },
+    { id: "billing", name: "Billing", count: conversationCounts?.billing, icon: Mail },
+    { id: "technical", name: "Technical Support", count: conversationCounts?.technical, icon: MessageSquare },
+  ]
+
+  const channelsWithCounts = channels.map(ch => ({
+    ...ch,
+    count: channelCounts?.[ch.id as keyof typeof channelCounts] ?? ch.count
+  }))
+
+  const languagesWithCounts = languages.map(lang => ({
+    ...lang,
+    count: languageCounts?.[lang.id as keyof typeof languageCounts] ?? lang.count
+  }))
+  // Internal state as fallback if not controlled externally
+  const [internalQueue, setInternalQueue] = useState("all")
+  const [internalChannels, setInternalChannels] = useState<string[]>([])
+  const [internalPriorities, setInternalPriorities] = useState<string[]>([])
+  const [internalSentiments, setInternalSentiments] = useState<string[]>([])
+  const [internalSLA, setInternalSLA] = useState<string[]>([])
+  const [internalLanguages, setInternalLanguages] = useState<string[]>([])
+
+  // Use external state if provided, otherwise use internal state
+  const selectedQueue = externalSelectedQueue ?? internalQueue
+  const selectedChannels = externalSelectedChannels ?? internalChannels
+  const selectedPriorities = externalSelectedPriorities ?? internalPriorities
+  const selectedSentiments = externalSelectedSentiments ?? internalSentiments
+  const selectedSLA = externalSelectedSLA ?? internalSLA
+  const selectedLanguages = externalSelectedLanguages ?? internalLanguages
+
+  const setSelectedQueue = onQueueChange || setInternalQueue
+  const setSelectedChannels = onChannelsChange || setInternalChannels
+  const setSelectedPriorities = onPrioritiesChange || setInternalPriorities
+  const setSelectedSentiments = onSentimentsChange || setInternalSentiments
+  const setSelectedSLA = onSLAChange || setInternalSLA
+  const setSelectedLanguages = onLanguagesChange || setInternalLanguages
 
   const toggleFilter = (current: string[], setter: (val: string[]) => void, value: string) => {
     if (current.includes(value)) {
@@ -102,7 +184,7 @@ export function QueueSidebar() {
                 {queue.name}
               </span>
               <Badge variant={selectedQueue === queue.id ? "secondary" : "outline"} className="text-xs">
-                {queue.count}
+                {queue.count ?? 0}
               </Badge>
             </button>
           ))}
@@ -123,7 +205,7 @@ export function QueueSidebar() {
             <ChevronDown className="h-4 w-4" />
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2 space-y-2">
-            {channels.map((channel) => (
+            {channelsWithCounts.map((channel) => (
               <div key={channel.id} className="flex items-center gap-2">
                 <Checkbox
                   id={`channel-${channel.id}`}
@@ -225,7 +307,7 @@ export function QueueSidebar() {
             <ChevronDown className="h-4 w-4" />
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2 space-y-2">
-            {languages.map((lang) => (
+            {languagesWithCounts.map((lang) => (
               <div key={lang.id} className="flex items-center gap-2">
                 <Checkbox
                   id={`lang-${lang.id}`}
