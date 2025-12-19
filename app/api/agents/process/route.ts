@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processMessage } from '@/lib/agents/langgraph-workflow';
-import { getConversation } from '@/lib/store-adapter';
 
 /**
  * Process a message through the LangGraph agent workflow
  * POST /api/agents/process
+ * 
+ * This endpoint is idempotent - can be called multiple times with same messageId
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { conversationId, message, customerInfo } = body;
+    const { conversationId, message, messageId, customerInfo, channel, metadata } = body;
 
     if (!conversationId || !message) {
       return NextResponse.json(
@@ -18,28 +19,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get conversation to extract customer info if not provided
-    const conversation = await getConversation(conversationId);
-    if (!conversation) {
+    // Try to get conversation from banking store first
+    let conversation = null;
+    let customer = customerInfo;
+
+    try {
+      const { getBankingConversation } = await import('@/lib/banking-store');
+      conversation = await getBankingConversation(conversationId);
+    } catch (error) {
+      // Fallback to old store adapter
+      try {
+        const { getConversation } = await import('@/lib/store-adapter');
+        conversation = await getConversation(conversationId);
+      } catch (e) {
+        console.warn('Could not fetch conversation from either store');
+      }
+    }
+
+    // Extract customer info
+    if (!customer && conversation) {
+      customer = {
+        id: conversation.customer.id,
+        name: conversation.customer.name,
+        phone: conversation.customer.phone,
+        email: conversation.customer.email,
+        tier: conversation.customer.tier,
+      };
+    }
+
+    if (!customer) {
       return NextResponse.json(
-        { error: 'Conversation not found' },
+        { error: 'Customer info not found' },
         { status: 404 }
       );
     }
 
-    const customer = customerInfo || {
-      id: conversation.customer.id,
-      name: conversation.customer.name,
-      phone: conversation.customer.phone,
-      email: conversation.customer.email,
-      tier: conversation.customer.tier,
-    };
-
     // Process message through LangGraph workflow
+    // This is idempotent - processMessage handles duplicate calls gracefully
+    // Step 4: Pass channel/address metadata and messageId for comprehensive state
     const result = await processMessage(
       conversationId,
       message,
-      customer
+      customer,
+      {
+        channel: channel as 'whatsapp' | 'email' | 'voice' | 'sms',
+        fromAddress: metadata?.fromAddress,
+        messageId: messageId || `msg-${Date.now()}`,
+      }
     );
 
     return NextResponse.json({

@@ -5,7 +5,6 @@
  * Usage: node scripts/run-migrations.mjs
  */
 
-import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -28,20 +27,22 @@ if (!supabaseUrl || !supabaseKey) {
 console.log('🚀 Supabase Migration Runner\n');
 console.log(`📍 Project: ${supabaseUrl}\n`);
 
-// Since we can't execute SQL directly via anon key, we'll provide a better solution
+// Since we can't execute SQL directly via anon key, we'll provide a safe helper
 console.log('📋 Migration Instructions:\n');
 console.log('Since automated SQL execution requires service role permissions,');
 console.log('please run these migrations in the Supabase SQL Editor:\n');
-console.log('🔗 Open: https://supabase.com/dashboard/project/plcjfyftcnmkrffpvukz/sql/new\n');
+const projectId = supabaseUrl.replace('https://', '').replace('.supabase.co', '');
+console.log(`🔗 Open: https://supabase.com/dashboard/project/${projectId}/sql/new\n`);
 
-const migrations = [
-  '001_initial_schema.sql',
-  '002_seed_demo_data.sql',
-  '003_seed_conversations.sql',
-];
+// List all migration SQL files in order (001_... -> 999_...)
+const migrationsDir = path.join(__dirname, '..', 'supabase', 'migrations');
+const migrations = fs
+  .readdirSync(migrationsDir)
+  .filter((f) => f.endsWith('.sql'))
+  .sort((a, b) => a.localeCompare(b));
 
 migrations.forEach((file, index) => {
-  const filePath = path.join(__dirname, '..', 'supabase', 'migrations', file);
+  const filePath = path.join(migrationsDir, file);
   const sql = fs.readFileSync(filePath, 'utf8');
   
   console.log(`\n${index + 1}. ${file}`);

@@ -5,7 +5,7 @@
 
 import { supabase } from './supabase';
 import { Conversation, Message } from './sample-data';
-import { StoredCall, StoredMessage } from './data-store';
+import { StoredCall, StoredMessage, TranscriptTurn } from './data-store';
 
 /**
  * Call storage functions
@@ -28,9 +28,9 @@ export async function storeCall(call: StoredCall): Promise<void> {
         const { data: newCustomer, error: customerError } = await supabase
           .from('customers')
           .insert({
-            name: call.customerName || phoneNumber || 'Unknown Caller',
+            name: call.customerName || call.customerPhone || 'Unknown Caller',
             email: call.customerEmail || null,
-            phone: phoneNumber,
+            phone: call.customerPhone || '',
             tier: 'standard',
           })
           .select('id')
@@ -229,6 +229,66 @@ export async function updateCallStatus(
   if (error) {
     console.error('Error updating call:', error);
     throw error;
+  }
+}
+
+/**
+ * Append transcript turns to an existing call (used by Vapi/Twilio voice webhooks).
+ * Persists into `call_transcripts` and mirrors into `messages` with `is_transcript=true`
+ * when the call is linked to a conversation.
+ */
+export async function appendCallTranscript(callSid: string, turns: TranscriptTurn[]): Promise<void> {
+  if (!turns || turns.length === 0) return;
+
+  // Look up call row for FK + optional conversation mirroring
+  const { data: callRow, error: callErr } = await supabase
+    .from('calls')
+    .select('id, conversation_id')
+    .eq('call_sid', callSid)
+    .single();
+
+  if (callErr || !callRow) {
+    console.warn('appendCallTranscript: call not found', { callSid, callErr });
+    return;
+  }
+
+  const transcriptRows = turns.map((t) => ({
+    call_id: callRow.id,
+    speaker: t.speaker,
+    text: t.text,
+    timestamp: t.timestamp.toISOString(),
+  }));
+
+  const { error: txErr } = await supabase.from('call_transcripts').insert(transcriptRows);
+  if (txErr) {
+    console.error('appendCallTranscript: failed to insert call_transcripts', txErr);
+    // continue; we still might mirror into messages for UI
+  }
+
+  // Mirror into conversation messages for UI (optional)
+  if (callRow.conversation_id) {
+    const msgRows = turns.map((t) => ({
+      conversation_id: callRow.conversation_id,
+      type: t.speaker,
+      content: t.text,
+      timestamp: t.timestamp.toISOString(),
+      is_transcript: true,
+    }));
+
+    const { error: msgErr } = await supabase.from('messages').insert(msgRows);
+    if (msgErr) {
+      console.error('appendCallTranscript: failed to insert messages mirror', msgErr);
+    }
+
+    // Update conversation preview
+    const last = turns.reduce((acc, cur) => (cur.timestamp > acc.timestamp ? cur : acc), turns[0]);
+    await supabase
+      .from('conversations')
+      .update({
+        last_message: last.text,
+        last_message_time: last.timestamp.toISOString(),
+      })
+      .eq('id', callRow.conversation_id);
   }
 }
 
@@ -687,7 +747,7 @@ export async function createConversationFromMessage(message: StoredMessage): Pro
           ai_confidence: 0.85,
           escalation_risk: false,
           tags: [],
-                industry: 'ecommerce', // Default industry for new conversations
+                industry: 'banking', // Default industry for new conversations
         })
         .select('id')
         .single();

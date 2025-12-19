@@ -8,13 +8,106 @@ import { BaseMessage, HumanMessage, AIMessage, SystemMessage } from "@langchain/
 import { ChatOpenAI } from "@langchain/openai";
 import { getConversation, updateConversation } from "@/lib/store-adapter";
 import { RunnableConfig } from "@langchain/core/runnables";
+import { resolveIdentity, IdentityResolutionResult } from "@/lib/identity-resolution";
+import { Conversation, Message } from "@/lib/sample-data";
 
 /**
- * Agent State - tracks conversation state throughout the workflow
+ * Voice formatting helper (Step 9 scaffolding)
+ * - Short confirmations
+ * - Clear turn-taking
+ * - Avoids long paragraphs / markdown for TTS
+ */
+function formatVoiceResponse(draft: string): string {
+  const input = (draft || '').trim();
+  if (!input) return '';
+
+  // Remove common markdown formatting that sounds bad in voice
+  let text = input
+    .replace(/```[\s\S]*?```/g, ' ') // code fences
+    .replace(/`([^`]+)`/g, '$1') // inline code
+    .replace(/\*\*(.*?)\*\*/g, '$1') // bold
+    .replace(/\*(.*?)\*/g, '$1') // italics
+    .replace(/^[-*]\s+/gm, '') // bullets
+    .replace(/\n+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Split into sentences and keep it tight (voice-friendly)
+  const sentences = text
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  let compact = sentences.slice(0, 2).join(' ').trim();
+  if (!compact) compact = text;
+
+  // Short acknowledgement prefix (turn-taking)
+  if (!/^(okay|ok|got it|sure|alright|thanks|thank you|understood)\b/i.test(compact)) {
+    compact = `Okay. ${compact}`;
+  }
+
+  // Ensure it ends cleanly
+  if (!/[.!?]$/.test(compact)) compact = `${compact}.`;
+
+  // If it's still long, trim to a reasonable TTS chunk
+  const maxChars = 280;
+  if (compact.length > maxChars) {
+    compact = compact.slice(0, maxChars - 1);
+    compact = compact.replace(/\s+\S*$/, ''); // avoid cutting mid-word
+    compact = `${compact}…`;
+  }
+
+  return compact;
+}
+
+/**
+ * Node: Voice formatting (Step 9 scaffolding)
+ * Applies to `assistant_draft` only; does not execute actions.
+ */
+async function voiceFormatting(state: AgentState): Promise<Partial<AgentState>> {
+  if (state.channel !== 'voice') return {};
+  const formatted = formatVoiceResponse(state.assistant_draft);
+  return { assistant_draft: formatted };
+}
+
+/**
+ * Step 4: Comprehensive Agent State Object
+ * Single source of truth for the entire LangGraph run
+ * 
+ * This state object can explain the entire run in audit logs
  */
 export interface AgentState {
-  conversationId: string;
-  messages: BaseMessage[];
+  // ========== INPUT ==========
+  conversation_id: string;
+  message_id: string;
+  channel: 'whatsapp' | 'voice' | 'email' | 'sms';
+
+  // ========== CONVERSATION CONTEXT ==========
+  conversation: Conversation | null; // Full conversation from CC DB
+  latest_message: Message | null; // Latest message from CC DB
+  recent_messages: Message[]; // Short window (last 5-10 messages)
+
+  // ========== IDENTITY ==========
+  identity_status: 'resolved_verified' | 'resolved_unverified' | 'unresolved' | 'ambiguous';
+  bank_customer_id: string | null; // Set if identity is resolved
+
+  // ========== ROUTING ==========
+  intent: string | null; // Normalized enum (fraud, disputes, billing, loans, cards, general, other)
+  selected_agent: AgentType | null; // One of the 7 specialized agents
+  requires_auth: boolean; // Whether authentication is required
+  auth_level_required: 'none' | 'otp' | 'kba'; // Authentication level needed
+
+  // ========== OUTPUTS ==========
+  assistant_draft: string; // Generated assistant response (before finalization)
+  actions: Action[]; // Deterministic plan of actions to take
+  disposition_code: string | null; // Final disposition (resolved, escalated, pending, etc.)
+
+  // ========== CONTROL ==========
+  errors: ErrorInfo[]; // Errors encountered during processing
+  retry_count: number; // Number of retries attempted
+
+  // ========== LEGACY FIELDS (for backward compatibility) ==========
+  messages: BaseMessage[]; // LangChain message format
   customerInfo: {
     id: string;
     name: string;
@@ -22,13 +115,44 @@ export interface AgentState {
     email?: string;
     tier: 'standard' | 'premium' | 'enterprise';
   };
-  intent: string | null;
   sentiment: 'positive' | 'neutral' | 'negative';
   sentimentScore: number;
   currentStep: string;
   requiresHumanEscalation: boolean;
   resolved: boolean;
   metadata: Record<string, any>;
+}
+
+/**
+ * Agent Types - 7 specialized banking agents
+ */
+export type AgentType =
+  | 'fraud_specialist'      // Fraud detection and prevention
+  | 'disputes_specialist'    // Chargebacks and disputes
+  | 'billing_specialist'    // Billing and payments
+  | 'loans_specialist'      // Loan inquiries and applications
+  | 'cards_specialist'       // Credit/debit card issues
+  | 'general_support'        // General banking inquiries
+  | 'escalation_handler';    // High-priority escalations
+
+/**
+ * Action - Deterministic plan item
+ */
+export interface Action {
+  type: 'respond' | 'escalate' | 'request_auth' | 'create_case' | 'lookup_customer' | 'update_conversation';
+  description: string;
+  parameters?: Record<string, any>;
+  completed: boolean;
+}
+
+/**
+ * Error Info - Structured error information
+ */
+export interface ErrorInfo {
+  code: string;
+  message: string;
+  timestamp: Date;
+  recoverable: boolean;
 }
 
 /**
@@ -55,6 +179,107 @@ function getAgentLLM() {
 }
 
 /**
+ * Map intent to agent type (7 specialized banking agents)
+ */
+function mapIntentToAgent(intent: string | null): AgentType {
+  if (!intent) return 'general_support';
+  
+  const normalized = intent.toLowerCase();
+  
+  if (normalized.includes('fraud') || normalized.includes('suspicious')) {
+    return 'fraud_specialist';
+  }
+  if (normalized.includes('dispute') || normalized.includes('chargeback')) {
+    return 'disputes_specialist';
+  }
+  if (normalized.includes('billing') || normalized.includes('payment') || normalized.includes('invoice')) {
+    return 'billing_specialist';
+  }
+  if (normalized.includes('loan') || normalized.includes('mortgage') || normalized.includes('credit line')) {
+    return 'loans_specialist';
+  }
+  if (normalized.includes('card') || normalized.includes('credit card') || normalized.includes('debit')) {
+    return 'cards_specialist';
+  }
+  if (normalized.includes('complaint') || normalized.includes('escalat') || normalized.includes('urgent')) {
+    return 'escalation_handler';
+  }
+  
+  return 'general_support';
+}
+
+/**
+ * Determine if intent requires authentication
+ */
+function requiresAuthentication(intent: string | null, identityStatus: AgentState['identity_status']): {
+  requires_auth: boolean;
+  auth_level_required: 'none' | 'otp' | 'kba';
+} {
+  if (identityStatus === 'resolved_verified') {
+    return { requires_auth: false, auth_level_required: 'none' };
+  }
+
+  if (!intent) {
+    return { requires_auth: false, auth_level_required: 'none' };
+  }
+
+  const normalized = intent.toLowerCase();
+  
+  // High-sensitivity intents require KBA
+  if (normalized.includes('fraud') || normalized.includes('dispute') || normalized.includes('account') || normalized.includes('transaction')) {
+    return { requires_auth: true, auth_level_required: 'kba' };
+  }
+  
+  // Medium-sensitivity intents require OTP
+  if (normalized.includes('billing') || normalized.includes('payment') || normalized.includes('card')) {
+    return { requires_auth: true, auth_level_required: 'otp' };
+  }
+  
+  return { requires_auth: false, auth_level_required: 'none' };
+}
+
+/**
+ * Audit log helper - logs state transitions
+ */
+async function auditStateTransition(
+  conversationId: string,
+  eventType: string,
+  state: Partial<AgentState>,
+  success: boolean = true,
+  error?: ErrorInfo
+): Promise<void> {
+  try {
+    const { writeAuditLog } = await import('@/lib/banking-store');
+    await writeAuditLog({
+      conversationId,
+      actorType: 'system',
+      eventType,
+      eventVersion: 1,
+      inputRedacted: {
+        conversation_id: state.conversation_id,
+        message_id: state.message_id,
+        channel: state.channel,
+        intent: state.intent,
+        selected_agent: state.selected_agent,
+        identity_status: state.identity_status,
+      },
+      outputRedacted: {
+        assistant_draft_length: state.assistant_draft?.length || 0,
+        actions_count: state.actions?.length || 0,
+        disposition_code: state.disposition_code,
+        errors_count: state.errors?.length || 0,
+      },
+      success,
+      errorCode: error?.code,
+      errorMessage: error?.message,
+    });
+  } catch (auditError) {
+    console.error('Failed to write audit log:', auditError);
+    // Don't throw - audit logging failures shouldn't break the workflow
+  }
+}
+
+/**
  * Node: Greet customer and gather initial information
  */
 async function greetCustomer(state: AgentState): Promise<Partial<AgentState>> {
@@ -73,6 +298,7 @@ Keep responses brief and conversational.`;
   
   return {
     messages: [...state.messages, response],
+    assistant_draft: response.content.toString(),
     currentStep: 'greeting',
   };
 }
@@ -201,6 +427,7 @@ Be professional and solution-oriented. If you cannot resolve the issue, offer to
   
   return {
     messages: [...state.messages, response],
+    assistant_draft: response.content.toString(),
     currentStep: 'billing_handler',
     resolved: resolutionCheck.resolved,
     requiresHumanEscalation: resolutionCheck.requiresEscalation,
@@ -228,6 +455,7 @@ Be patient and clear with instructions. If the issue is complex, offer to escala
   
   return {
     messages: [...state.messages, response],
+    assistant_draft: response.content.toString(),
     currentStep: 'technical_handler',
     resolved: resolutionCheck.resolved,
     requiresHumanEscalation: resolutionCheck.requiresEscalation,
@@ -255,6 +483,7 @@ Be enthusiastic and helpful. If the customer wants to purchase, guide them throu
   
   return {
     messages: [...state.messages, response],
+    assistant_draft: response.content.toString(),
     currentStep: 'product_handler',
     resolved: resolutionCheck.resolved,
     requiresHumanEscalation: resolutionCheck.requiresEscalation,
@@ -282,6 +511,7 @@ Be friendly and solution-oriented. If you cannot help, offer to connect them wit
   
   return {
     messages: [...state.messages, response],
+    assistant_draft: response.content.toString(),
     currentStep: 'general_handler',
     resolved: resolutionCheck.resolved,
     requiresHumanEscalation: resolutionCheck.requiresEscalation,
@@ -293,17 +523,35 @@ Be friendly and solution-oriented. If you cannot help, offer to connect them wit
  */
 async function escalateToHuman(state: AgentState): Promise<Partial<AgentState>> {
   // Update conversation in database to mark for human assignment
-  const conversation = await getConversation(state.conversationId);
+  const conversation = state.conversation || await getConversation(state.conversation_id);
   if (conversation) {
-    await updateConversation(state.conversationId, {
-      status: 'escalated',
-      priority: 'high',
-      escalationRisk: true,
-    });
+    try {
+      const { updateBankingConversation } = await import('@/lib/banking-store');
+      await updateBankingConversation(state.conversation_id, {
+        status: 'escalated',
+        priority: 'urgent',
+      });
+    } catch {
+      // Fallback to old store
+      await updateConversation(state.conversation_id, {
+        status: 'escalated',
+        priority: 'high',
+        escalationRisk: true,
+      });
+    }
   }
+
+  // Audit: Escalation
+  await auditStateTransition(state.conversation_id, 'agent_escalated', {
+    conversation_id: state.conversation_id,
+    selected_agent: 'escalation_handler',
+    disposition_code: 'escalated',
+  });
 
   return {
     requiresHumanEscalation: true,
+    selected_agent: 'escalation_handler',
+    disposition_code: 'escalated',
     currentStep: 'escalation',
     resolved: false,
   };
@@ -363,16 +611,103 @@ function isResolved(state: AgentState): string {
 
 /**
  * Build the agent workflow graph
- * Simplified implementation that works with LangGraph's StateGraph
+ * Step 4: Updated to support comprehensive state object
  */
 export function createAgentWorkflow() {
   // Create workflow with state reducer functions
   const workflow = new StateGraph<AgentState>({
     channels: {
-      conversationId: {
+      // Step 4: Input fields
+      conversation_id: {
         reducer: (x: string | undefined, y: string | undefined) => y ?? x ?? "",
         default: () => "",
       },
+      message_id: {
+        reducer: (x: string | undefined, y: string | undefined) => y ?? x ?? "",
+        default: () => "",
+      },
+      channel: {
+        reducer: (x: AgentState['channel'] | undefined, y: AgentState['channel'] | undefined) => y ?? x ?? 'whatsapp',
+        default: () => 'whatsapp' as const,
+      },
+      // Step 4: Conversation context
+      conversation: {
+        reducer: (x: Conversation | null | undefined, y: Conversation | null | undefined) => y ?? x ?? null,
+        default: () => null,
+      },
+      latest_message: {
+        reducer: (x: Message | null | undefined, y: Message | null | undefined) => y ?? x ?? null,
+        default: () => null,
+      },
+      recent_messages: {
+        reducer: (x: Message[] | undefined, y: Message[] | undefined) => {
+          const existing = x ?? [];
+          const newMessages = y ?? [];
+          // Keep last 10 messages
+          return [...existing, ...newMessages].slice(-10);
+        },
+        default: () => [],
+      },
+      // Step 4: Identity
+      identity_status: {
+        reducer: (x: AgentState['identity_status'] | undefined, y: AgentState['identity_status'] | undefined) => 
+          y ?? x ?? 'unresolved',
+        default: () => 'unresolved' as const,
+      },
+      bank_customer_id: {
+        reducer: (x: string | null | undefined, y: string | null | undefined) => y ?? x ?? null,
+        default: () => null,
+      },
+      // Step 4: Routing
+      intent: {
+        reducer: (x: string | null | undefined, y: string | null | undefined) => y ?? x ?? null,
+        default: () => null,
+      },
+      selected_agent: {
+        reducer: (x: AgentType | null | undefined, y: AgentType | null | undefined) => y ?? x ?? null,
+        default: () => null,
+      },
+      requires_auth: {
+        reducer: (x: boolean | undefined, y: boolean | undefined) => y ?? x ?? false,
+        default: () => false,
+      },
+      auth_level_required: {
+        reducer: (x: AgentState['auth_level_required'] | undefined, y: AgentState['auth_level_required'] | undefined) => 
+          y ?? x ?? 'none',
+        default: () => 'none' as const,
+      },
+      // Step 4: Outputs
+      assistant_draft: {
+        reducer: (x: string | undefined, y: string | undefined) => y ?? x ?? "",
+        default: () => "",
+      },
+      actions: {
+        reducer: (x: Action[] | undefined, y: Action[] | undefined) => {
+          const existing = x ?? [];
+          const newActions = y ?? [];
+          // Merge actions, preferring new ones
+          return newActions.length > 0 ? newActions : existing;
+        },
+        default: () => [],
+      },
+      disposition_code: {
+        reducer: (x: string | null | undefined, y: string | null | undefined) => y ?? x ?? null,
+        default: () => null,
+      },
+      // Step 4: Control
+      errors: {
+        reducer: (x: ErrorInfo[] | undefined, y: ErrorInfo[] | undefined) => {
+          const existing = x ?? [];
+          const newErrors = y ?? [];
+          return [...existing, ...newErrors];
+        },
+        default: () => [],
+      },
+      retry_count: {
+        reducer: (x: number | undefined, y: number | undefined) => (y ?? 0) + (x ?? 0),
+        default: () => 0,
+      },
+      // Legacy fields (for backward compatibility)
       messages: {
         reducer: (x: BaseMessage[] | undefined, y: BaseMessage[] | undefined) => {
           const existing = x ?? [];
@@ -401,10 +736,6 @@ export function createAgentWorkflow() {
           phone: "",
           tier: 'standard' as const,
         }),
-      },
-      intent: {
-        reducer: (x: string | null | undefined, y: string | null | undefined) => y ?? x ?? null,
-        default: () => null,
       },
       sentiment: {
         reducer: (x: 'positive' | 'neutral' | 'negative' | undefined, y: 'positive' | 'neutral' | 'negative' | undefined) => y ?? x ?? 'neutral',
@@ -443,6 +774,7 @@ export function createAgentWorkflow() {
   workflow.addNode('product', handleProduct);
   workflow.addNode('general', handleGeneral);
   workflow.addNode('escalate', escalateToHuman);
+  workflow.addNode('voice_format', voiceFormatting);
 
   // Add edges
   workflow.addEdge(START, 'greet');
@@ -516,12 +848,153 @@ export function createAgentWorkflow() {
 }
 
 /**
+ * Initialize AgentState from input parameters
+ * Step 4: Creates comprehensive state object as single source of truth
+ */
+async function initializeAgentState(
+  conversationId: string,
+  messageId: string,
+  channel: 'whatsapp' | 'email' | 'voice' | 'sms',
+  customerMessage: string,
+  metadata?: {
+    fromAddress?: string;
+  }
+): Promise<AgentState> {
+  // Try banking store first, fallback to old store
+  let conversation: Conversation | null = null;
+  try {
+    const { getBankingConversation } = await import('@/lib/banking-store');
+    const conv = await getBankingConversation(conversationId);
+    conversation = conv || null;
+  } catch {
+    try {
+      const conv = await getConversation(conversationId);
+      conversation = conv || null;
+    } catch {
+      console.warn('Could not fetch conversation from either store');
+      conversation = null;
+    }
+  }
+
+  // Get recent messages (last 10)
+  const allMessages = conversation?.messages || [];
+  const recentMessages = allMessages.slice(-10);
+  const latestMessage = allMessages.length > 0 ? allMessages[allMessages.length - 1] : null;
+
+  // Resolve identity (Step 3F integration)
+  let identityStatus: AgentState['identity_status'] = 'unresolved';
+  let bankCustomerId: string | null = null;
+  
+  if (metadata?.fromAddress) {
+    try {
+      const identityResult = await resolveIdentity({
+        channel,
+        fromAddress: metadata.fromAddress,
+        conversationId,
+      });
+      
+      identityStatus = identityResult.status === 'resolved_verified' ? 'resolved_verified' :
+                      identityResult.status === 'resolved_unverified' ? 'resolved_unverified' :
+                      identityResult.status === 'ambiguous' ? 'ambiguous' : 'unresolved';
+      
+      if (identityResult.status === 'resolved_verified' || identityResult.status === 'resolved_unverified') {
+        bankCustomerId = identityResult.bankCustomerId || null;
+      }
+      
+      console.log('🔐 Identity resolution:', { identityStatus, bankCustomerId });
+    } catch (error) {
+      console.error('Error resolving identity:', error);
+    }
+  }
+
+  // Convert messages to LangChain format
+  const langChainMessages: BaseMessage[] = allMessages.map(msg => {
+    if (msg.type === 'customer') {
+      return new HumanMessage(msg.content);
+    } else if (msg.type === 'agent' || msg.type === 'ai') {
+      return new AIMessage(msg.content);
+    } else {
+      return new SystemMessage(msg.content);
+    }
+  });
+  langChainMessages.push(new HumanMessage(customerMessage));
+
+  // Extract customer info
+  const customerInfo = conversation?.customer || {
+    id: '',
+    name: 'Unknown',
+    phone: '',
+    email: '',
+    avatar: '/placeholder-user.jpg',
+    language: 'English',
+    preferredLanguage: 'en',
+    tier: 'standard' as const,
+  };
+
+  // Initialize state
+  const initialState: AgentState = {
+    // Input
+    conversation_id: conversationId,
+    message_id: messageId,
+    channel,
+
+    // Conversation context
+    conversation,
+    latest_message: latestMessage,
+    recent_messages: recentMessages,
+
+    // Identity
+    identity_status: identityStatus,
+    bank_customer_id: bankCustomerId,
+
+    // Routing (will be populated by analysis)
+    intent: null,
+    selected_agent: null,
+    requires_auth: false,
+    auth_level_required: 'none',
+
+    // Outputs (will be populated by workflow)
+    assistant_draft: '',
+    actions: [],
+    disposition_code: null,
+
+    // Control
+    errors: [],
+    retry_count: 0,
+
+    // Legacy fields (for backward compatibility)
+    messages: langChainMessages,
+    customerInfo: {
+      id: customerInfo.id,
+      name: customerInfo.name,
+      phone: customerInfo.phone,
+      email: customerInfo.email,
+      tier: customerInfo.tier,
+    },
+    sentiment: 'neutral',
+    sentimentScore: 0.5,
+    currentStep: 'initialized',
+    requiresHumanEscalation: false,
+    resolved: false,
+    metadata: {},
+  };
+
+  return initialState;
+}
+
+/**
  * Process a new customer message through the agent workflow
+ * Step 4: Uses comprehensive state object as single source of truth
  */
 export async function processMessage(
   conversationId: string,
   customerMessage: string,
-  customerInfo: AgentState['customerInfo']
+  customerInfo: AgentState['customerInfo'],
+  metadata?: {
+    channel?: 'whatsapp' | 'email' | 'voice' | 'sms';
+    fromAddress?: string;
+    messageId?: string;
+  }
 ): Promise<{
   response: string;
   intent: string | null;
@@ -529,40 +1002,65 @@ export async function processMessage(
   requiresEscalation: boolean;
   resolved: boolean;
 }> {
+  const messageId = metadata?.messageId || `msg-${Date.now()}`;
+  const channel = metadata?.channel || 'whatsapp';
+  
   try {
-    console.log('🔄 Starting LangGraph processMessage:', { conversationId, customerMessage: customerMessage.substring(0, 50) });
-    
-    // Get existing conversation
-    const conversation = await getConversation(conversationId);
-    console.log('📋 Conversation retrieved:', conversation ? 'Found' : 'Not found', conversationId);
-    
-    const existingMessages = conversation?.messages || [];
-    console.log('💬 Existing messages:', existingMessages.length);
-    
-    // Convert to LangChain messages
-    const messages: BaseMessage[] = existingMessages.map(msg => {
-      if (msg.type === 'customer') {
-        return new HumanMessage(msg.content);
-      } else if (msg.type === 'agent' || msg.type === 'ai') {
-        return new AIMessage(msg.content);
-      } else {
-        return new SystemMessage(msg.content);
-      }
+    console.log('🔄 Starting LangGraph processMessage (Step 4):', { 
+      conversationId, 
+      messageId,
+      channel,
+      customerMessage: customerMessage.substring(0, 50) 
     });
-
-    // Add new customer message
-    messages.push(new HumanMessage(customerMessage));
-
-    // For now, use a simplified direct LLM call instead of the complex workflow
-    // This will help us debug if the issue is with the workflow or the LLM
-    const llm = getAgentLLM();
     
-    const systemPrompt = `You are a friendly and helpful customer service AI assistant. 
+    // Step 4.1: Initialize comprehensive state object
+    let state = await initializeAgentState(
+      conversationId,
+      messageId,
+      channel,
+      customerMessage,
+      metadata
+    );
+
+    // Audit: State initialized
+    await auditStateTransition(conversationId, 'agent_state_initialized', state);
+
+    // Step 4: Analyze intent
+    const llm = getAgentLLM();
+    const intentPrompt = `Categorize this banking message into one: fraud, disputes, billing, loans, cards, general, other. Respond with ONLY the category.`;
+    const intentMsg = await llm.invoke([
+      new SystemMessage(intentPrompt),
+      new HumanMessage(customerMessage),
+    ]);
+    const intent = intentMsg.content.toString().trim().toLowerCase();
+    state.intent = intent || null;
+
+    // Step 4: Map intent to agent
+    state.selected_agent = mapIntentToAgent(state.intent);
+
+    // Step 4: Determine auth requirements
+    const authCheck = requiresAuthentication(state.intent, state.identity_status);
+    state.requires_auth = authCheck.requires_auth;
+    state.auth_level_required = authCheck.auth_level_required;
+
+    // Step 4: Analyze sentiment
+    const sentimentPrompt = `Analyze sentiment: positive, neutral, or negative. Respond with ONLY one word.`;
+    const sentimentMsg = await llm.invoke([
+      new SystemMessage(sentimentPrompt),
+      new HumanMessage(customerMessage),
+    ]);
+    const sentiment = sentimentMsg.content.toString().trim().toLowerCase() as 'positive' | 'neutral' | 'negative';
+    const normalizedSentiment = ['positive', 'neutral', 'negative'].includes(sentiment) ? sentiment : 'neutral';
+    state.sentiment = normalizedSentiment;
+    state.sentimentScore = 0.5; // Could be enhanced with confidence score
+
+    // Step 4: Generate assistant response
+    const systemPrompt = `You are a friendly and helpful banking customer service AI assistant. 
 Respond to the customer's message in a warm, professional, and helpful manner.
 Keep responses concise (2-3 sentences max) and solution-oriented.
 If the customer seems frustrated, be empathetic and offer to help.`;
 
-    const conversationHistory = messages.slice(-10); // Last 10 messages for context
+    const conversationHistory = state.messages.slice(-10);
     const llmMessages = [
       new SystemMessage(systemPrompt),
       ...conversationHistory,
@@ -571,37 +1069,86 @@ If the customer seems frustrated, be empathetic and offer to help.`;
     console.log('🤖 Calling OpenAI LLM...');
     const aiResponse = await llm.invoke(llmMessages);
     const response = aiResponse.content.toString();
-    console.log('✅ Got AI response:', response.substring(0, 100));
+    state.assistant_draft = channel === 'voice' ? formatVoiceResponse(response) : response;
 
-    // Simple intent and sentiment analysis
-    const intentPrompt = `Categorize this message into one: billing, technical_support, product_inquiry, complaint, cancellation, other. Respond with ONLY the category.`;
-    const intentMsg = await llm.invoke([
-      new SystemMessage(intentPrompt),
-      new HumanMessage(customerMessage),
-    ]);
-    const intent = intentMsg.content.toString().trim().toLowerCase();
+    // Step 4: Create deterministic action plan
+    const actions: Action[] = [
+      {
+        type: 'respond',
+        description: `Respond to customer with ${state.selected_agent} expertise`,
+        parameters: { response: response.substring(0, 100) },
+        completed: false,
+      },
+    ];
 
-    const sentimentPrompt = `Analyze sentiment: positive, neutral, or negative. Respond with ONLY one word.`;
-    const sentimentMsg = await llm.invoke([
-      new SystemMessage(sentimentPrompt),
-      new HumanMessage(customerMessage),
-    ]);
-    const sentiment = sentimentMsg.content.toString().trim().toLowerCase() as 'positive' | 'neutral' | 'negative';
-    const normalizedSentiment = ['positive', 'neutral', 'negative'].includes(sentiment) ? sentiment : 'neutral';
+    if (state.requires_auth && state.identity_status !== 'resolved_verified') {
+      actions.push({
+        type: 'request_auth',
+        description: `Request ${state.auth_level_required} authentication`,
+        parameters: { auth_level: state.auth_level_required },
+        completed: false,
+      });
+    }
 
-    console.log('📊 Analysis:', { intent, sentiment: normalizedSentiment });
+    const requiresEscalation = normalizedSentiment === 'negative' && 
+                               (intent.includes('complaint') || intent.includes('fraud') || intent.includes('dispute'));
+    
+    if (requiresEscalation) {
+      actions.push({
+        type: 'escalate',
+        description: 'Escalate to human agent due to negative sentiment and sensitive intent',
+        parameters: { priority: 'high' },
+        completed: false,
+      });
+      state.requiresHumanEscalation = true;
+      state.selected_agent = 'escalation_handler';
+    }
 
+    state.actions = actions;
+    state.disposition_code = requiresEscalation ? 'escalated' : (state.identity_status === 'resolved_verified' ? 'in_progress' : 'pending_auth');
+    state.resolved = false;
+
+    // Audit: State after processing
+    await auditStateTransition(conversationId, 'agent_state_processed', state);
+
+    console.log('✅ Step 4 State processed:', {
+      intent: state.intent,
+      selected_agent: state.selected_agent,
+      identity_status: state.identity_status,
+      requires_auth: state.requires_auth,
+      auth_level: state.auth_level_required,
+      actions_count: state.actions.length,
+      disposition: state.disposition_code,
+    });
+
+    // Return legacy format for backward compatibility
     return {
-      response,
-      intent: intent || null,
-      sentiment: normalizedSentiment,
-      requiresEscalation: normalizedSentiment === 'negative' && (intent.includes('complaint') || intent.includes('cancellation')),
-      resolved: false,
+      response: state.assistant_draft,
+      intent: state.intent,
+      sentiment: state.sentiment,
+      requiresEscalation: state.requiresHumanEscalation,
+      resolved: state.resolved,
     };
   } catch (error: any) {
     console.error('❌ LangGraph processMessage error:', error);
     console.error('Error message:', error?.message);
     console.error('Error stack:', error?.stack);
+    
+    // Audit: Error state
+    const errorInfo: ErrorInfo = {
+      code: 'PROCESSING_ERROR',
+      message: error?.message || 'Unknown error',
+      timestamp: new Date(),
+      recoverable: true,
+    };
+    const errorState: Partial<AgentState> = {
+      conversation_id: conversationId,
+      message_id: messageId,
+      channel,
+      errors: [errorInfo],
+    };
+    await auditStateTransition(conversationId, 'agent_state_error', errorState, false, errorInfo);
+
     // Return a fallback response instead of throwing
     return {
       response: 'Thank you for your message! Our team will get back to you shortly. For urgent matters, please call us.',

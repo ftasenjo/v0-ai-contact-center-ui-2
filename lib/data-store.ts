@@ -5,6 +5,31 @@
 
 import { Conversation, Message } from './sample-data';
 
+export type TranscriptSpeaker = 'customer' | 'agent' | 'ai' | 'system';
+
+/**
+ * Normalized transcript storage format (voice)
+ *
+ * - StoredCall.transcript uses this shape in both memory + Supabase modes.
+ * - Supabase persistence currently stores the core fields (speaker/text/timestamp)
+ *   into `call_transcripts` and may optionally mirror into `messages` with `is_transcript=true`.
+ *
+ * NOTE: Optional fields are scaffolding for richer voice timing/confidence later.
+ */
+export interface TranscriptTurn {
+  speaker: TranscriptSpeaker;
+  text: string;
+  timestamp: Date;
+
+  // --- Optional voice metadata (scaffolding) ---
+  source?: 'twilio' | 'vapi' | 'human' | 'system';
+  isFinal?: boolean;
+  confidence?: number; // 0..1 (STT confidence if available)
+  startMs?: number; // offset from call start
+  endMs?: number; // offset from call start
+  turnId?: string; // stable id for dedupe across retries
+}
+
 export interface StoredCall {
   callSid: string;
   from: string;
@@ -21,11 +46,7 @@ export interface StoredCall {
   topic?: string;
   sentiment?: 'positive' | 'neutral' | 'negative';
   sentimentScore?: number;
-  transcript?: Array<{
-    speaker: 'customer' | 'agent' | 'ai' | 'system';
-    text: string;
-    timestamp: Date;
-  }>;
+  transcript?: TranscriptTurn[];
 }
 
 export interface StoredMessage {
@@ -135,6 +156,49 @@ export function updateCallStatus(callSid: string, status: string, updates?: Part
       conversationsStore.set(conversationId, conv);
     }
   }
+}
+
+/**
+ * Append transcript turns to an existing call (used by Vapi/Twilio voice webhooks).
+ * Also mirrors into the in-memory conversation messages for UI display.
+ */
+export function appendCallTranscript(callSid: string, turns: TranscriptTurn[]): void {
+  const call = callsStore.get(callSid);
+  if (!call) return;
+
+  const existingTranscript = call.transcript ?? [];
+  const merged = [...existingTranscript, ...turns].sort(
+    (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+  );
+
+  callsStore.set(callSid, { ...call, transcript: merged });
+
+  // Update conversation messages so the UI reflects live transcript
+  const conversationId = `call-${callSid}`;
+  const conv = conversationsStore.get(conversationId);
+  if (!conv) return;
+
+  const baseIdx = conv.messages.length;
+  const transcriptMessages = turns.map((t, idx) => ({
+    id: `msg-${callSid}-rt-${baseIdx + idx}`,
+    type: t.speaker,
+    content: t.text,
+    timestamp: t.timestamp,
+    sentiment: t.speaker === 'customer' ? call.sentiment : undefined,
+    isTranscript: true,
+  }));
+
+  const newMessages = [...conv.messages, ...transcriptMessages].sort(
+    (a, b) => a.timestamp.getTime() - b.timestamp.getTime()
+  );
+
+  const last = newMessages[newMessages.length - 1];
+  conversationsStore.set(conversationId, {
+    ...conv,
+    messages: newMessages,
+    lastMessage: last?.content ?? conv.lastMessage,
+    lastMessageTime: last?.timestamp ?? conv.lastMessageTime,
+  });
 }
 
 /**

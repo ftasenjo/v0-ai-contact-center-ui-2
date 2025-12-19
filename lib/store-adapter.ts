@@ -16,6 +16,7 @@ export const getCall = USE_SUPABASE ? supabaseStore.getCall : memoryStore.getCal
 export const getAllCalls = USE_SUPABASE ? supabaseStore.getAllCalls : memoryStore.getAllCalls;
 export const getActiveCalls = USE_SUPABASE ? supabaseStore.getActiveCalls : memoryStore.getActiveCalls;
 export const updateCallStatus = USE_SUPABASE ? supabaseStore.updateCallStatus : memoryStore.updateCallStatus;
+export const appendCallTranscript = USE_SUPABASE ? supabaseStore.appendCallTranscript : memoryStore.appendCallTranscript;
 
 export const storeMessage = USE_SUPABASE ? supabaseStore.storeMessage : memoryStore.storeMessage;
 export const getMessage = USE_SUPABASE ? supabaseStore.getMessage : memoryStore.getMessage;

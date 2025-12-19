@@ -16,7 +16,7 @@ import {
 import { filterByHandlingStatus, getHandlingLabel, type HandlingStatus } from "@/lib/conversation-handling"
 
 export default function InboxPage() {
-  const [selectedIndustry, setSelectedIndustry] = useState<Industry>("ecommerce")
+  const [selectedIndustry, setSelectedIndustry] = useState<Industry>("banking")
   const [selectedHandlingStatus, setSelectedHandlingStatus] = useState<HandlingStatus | 'all'>('all')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
@@ -29,7 +29,30 @@ export default function InboxPage() {
       try {
         setIsLoading(true);
         const response = await fetch(`/api/conversations?industry=${selectedIndustry}`);
-        const data = await response.json();
+        
+        // Check if response is OK
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API error:', {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorText,
+          });
+          throw new Error(`API error: ${response.status} ${response.statusText}`);
+        }
+        
+        // Get response as text first to check if it's valid JSON
+        const responseText = await response.text();
+        console.log('API response text (first 500 chars):', responseText.substring(0, 500));
+        
+        let data;
+        try {
+          data = JSON.parse(responseText);
+        } catch (parseError: any) {
+          console.error('JSON parse error:', parseError);
+          console.error('Response text:', responseText);
+          throw new Error(`Failed to parse JSON: ${parseError.message}`);
+        }
         
         if (data.success) {
           const allConversations = (data.conversations || []).map((conv: any) => ({

@@ -35,69 +35,71 @@ export async function POST(request: NextRequest) {
     
     console.log('✅ Call stored and conversation created:', callSid);
 
+    // Step 9: Also create/find cc_conversations row (banking-grade voice)
+    try {
+      const { createBankingConversationFromVoiceCall, writeAuditLog } = await import('@/lib/banking-store');
+      const ccResult = await createBankingConversationFromVoiceCall({
+        callSid,
+        from,
+        to,
+        timestamp: callData.startTime,
+        provider: 'twilio',
+      });
+
+      await writeAuditLog({
+        conversationId: ccResult?.conversationId,
+        actorType: 'system',
+        eventType: 'call_started',
+        eventVersion: 1,
+        inputRedacted: { channel: 'voice', provider: 'twilio', provider_conversation_id: callSid },
+        outputRedacted: { conversation_id: ccResult?.conversationId, is_new: ccResult?.isNewConversation },
+        success: !!ccResult,
+        context: 'webhook',
+      });
+    } catch (e) {
+      // Non-fatal: keep Twilio webhook responsive
+      console.warn('⚠️ Failed to create cc_conversation for voice call:', e);
+    }
+
     // Check if Vapi is enabled
     const useVapi = process.env.USE_VAPI === 'true';
     const vapiPhoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
     const vapiAssistantId = process.env.VAPI_ASSISTANT_ID;
+    const vapiTwilioStreamUrl = process.env.VAPI_TWILIO_STREAM_URL || 'wss://api.vapi.ai/stream';
 
     // Create TwiML response
     const twiml = new twilio.twiml.VoiceResponse();
 
     if (useVapi && vapiPhoneNumberId && vapiAssistantId) {
-      // Route call to Vapi AI assistant
-      // Vapi handles the call through their platform
-      // We'll use Twilio's <Dial> to connect to Vapi's phone number
-      // Or use Vapi's direct integration
-      
-      // Option 1: Use Vapi's phone number (if configured)
-      // Option 2: Use Vapi API to create call and connect
-      
-      // For now, we'll create a Vapi call via API
-      try {
-        const { createVapiCall } = await import('@/lib/vapi');
-        const vapiCall = await createVapiCall({
-          phoneNumberId: vapiPhoneNumberId,
-          customer: {
-            number: from,
-          },
-          assistantId: vapiAssistantId,
-          metadata: {
-            twilioCallSid: callSid,
-            twilioFrom: from,
-            twilioTo: to,
-          },
-        });
-        
-        console.log('✅ Vapi call created:', vapiCall.id);
-        
-        // Return TwiML that connects to Vapi
-        // Vapi will handle the call, so we can either:
-        // 1. Redirect to Vapi's phone number
-        // 2. Use Vapi's webhook to handle the call
-        
-        twiml.say(
-          {
-            voice: 'alice',
-            language: 'en-US',
-          },
-          'Connecting you to our AI assistant. Please hold.'
-        );
-        
-        // Note: Vapi typically handles calls through their own phone numbers
-        // You'll need to configure Vapi to use your Twilio number or vice versa
-        // This is a simplified integration - see VAPI_SETUP.md for full setup
-        
-      } catch (vapiError: any) {
-        console.error('Error creating Vapi call:', vapiError);
-        // Fallback to regular call handling
-        twiml.say(
-          {
-            voice: 'alice',
-            language: 'en-US',
-          },
-          'Thank you for calling. Your call is being connected to an agent. Please hold.'
-        );
-      }
+      /**
+       * Step 9 (voice scaffolding): Twilio Voice → Vapi streaming bridge
+       *
+       * Preferred integration for real-time voice is Twilio <Connect><Stream>.
+       * Vapi will receive audio + send events back to `/api/vapi/webhook`.
+       *
+       * NOTE: This is intentionally "plumbing only" — no banking actions are executed here.
+       */
+      const connect = twiml.connect();
+      // Twilio will open a WebSocket to Vapi. Vapi must be configured to accept the stream.
+      // If you need to pass metadata, Vapi typically supports reading query params or stream parameters.
+      // This repo currently uses Vapi metadata in webhook processing to map transcripts back to Twilio CallSid.
+      // Attach call identifiers so we can map Vapi → Twilio → cc_conversations reliably.
+      const streamUrl = new URL(vapiTwilioStreamUrl);
+      streamUrl.searchParams.set('twilioCallSid', callSid);
+      streamUrl.searchParams.set('twilioFrom', from);
+      streamUrl.searchParams.set('twilioTo', to);
+
+      const stream = connect.stream({ url: streamUrl.toString() });
+      // Also include as Twilio stream parameters (some receivers prefer this)
+      // @ts-ignore - twilio typings vary; parameter() exists at runtime
+      stream.parameter({ name: 'twilioCallSid', value: callSid });
+      // @ts-ignore
+      stream.parameter({ name: 'twilioFrom', value: from });
+      // @ts-ignore
+      stream.parameter({ name: 'twilioTo', value: to });
+
+      // A short, voice-friendly initial prompt (kept minimal; Vapi will do the speaking once connected)
+      twiml.pause({ length: 1 });
     } else {
       // Regular call handling (no Vapi)
       twiml.say(
