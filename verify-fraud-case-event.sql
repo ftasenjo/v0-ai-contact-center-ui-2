@@ -33,3 +33,4 @@ LEFT JOIN cc_automation_events e ON i.dedupe_key = e.dedupe_key
 WHERE i.type = 'fraud_case_created'
 ORDER BY i.created_at DESC
 LIMIT 5;
+

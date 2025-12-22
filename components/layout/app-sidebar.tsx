@@ -16,6 +16,8 @@ import {
   BookOpen,
   Zap,
   Bell,
+  Monitor,
+  MessageSquare,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth, type UserRole } from "@/contexts/auth-context"
@@ -34,7 +36,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 
-const navigation = [
+// Base navigation items (for supervisors, admins, analysts)
+const baseNavigation = [
   { name: "Inbox", href: "/inbox", icon: Inbox },
   { name: "Live Console", href: "/live-console", icon: PhoneCall },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
@@ -46,8 +49,22 @@ const navigation = [
   { name: "Settings", href: "/settings", icon: Settings },
 ]
 
+// Agent-specific navigation
+const chatAgentNavigation = [
+  { name: "Chat Agent", href: "/chat-agent", icon: MessageSquare },
+  { name: "Call Agent", href: "/call-agent", icon: PhoneCall },
+  { name: "Knowledge", href: "/knowledge", icon: BookOpen },
+]
+
+const callAgentNavigation = [
+  { name: "Call Agent", href: "/call-agent", icon: PhoneCall },
+  { name: "Chat Agent", href: "/chat-agent", icon: MessageSquare },
+  { name: "Knowledge", href: "/knowledge", icon: BookOpen },
+]
+
 const roleColors: Record<UserRole, string> = {
   agent: "bg-blue-500/10 text-blue-600",
+  call_agent: "bg-blue-500/10 text-blue-600",
   supervisor: "bg-amber-500/10 text-amber-600",
   admin: "bg-red-500/10 text-red-600",
   analyst: "bg-emerald-500/10 text-emerald-600",
@@ -73,7 +90,11 @@ export function AppSidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {navigation.map((item) => {
+        {(user.role === "agent"
+          ? chatAgentNavigation
+          : user.role === "call_agent"
+            ? callAgentNavigation
+            : baseNavigation).map((item) => {
           const isActive = pathname.startsWith(item.href)
           const hasAccess = canAccessRoute(user.role, item.href)
 
@@ -92,7 +113,7 @@ export function AppSidebar() {
             >
               <item.icon className="w-5 h-5" />
               {item.name}
-              {item.name === "Inbox" && (
+              {item.name === "Inbox" && user.role !== "agent" && (
                 <Badge
                   variant="secondary"
                   className="ml-auto text-xs bg-sidebar-primary text-sidebar-primary-foreground"
@@ -137,12 +158,12 @@ export function AppSidebar() {
                 Switch Role (Demo)
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
-                {(["agent", "supervisor", "admin", "analyst"] as UserRole[]).map((role) => (
+                {(["agent", "call_agent", "supervisor", "admin", "analyst"] as UserRole[]).map((role) => (
                   <DropdownMenuItem key={role} onClick={() => switchRole(role)} className="capitalize">
                     <Badge variant="outline" className={cn("mr-2", roleColors[role])}>
                       {role.slice(0, 1).toUpperCase()}
                     </Badge>
-                    {role}
+                    {role === "call_agent" ? "call agent" : role}
                     {user.role === role && <span className="ml-auto text-xs text-muted-foreground">Current</span>}
                   </DropdownMenuItem>
                 ))}

@@ -232,3 +232,4 @@ export function AutomationItems({ inboxItems, events, conversationId }: Automati
     </div>
   )
 }
+

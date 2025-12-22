@@ -19,3 +19,4 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
   return NextResponse.json({ case: data })
 }
 
+

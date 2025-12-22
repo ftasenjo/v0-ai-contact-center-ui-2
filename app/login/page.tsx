@@ -10,12 +10,16 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useAuth, type UserRole } from "@/contexts/auth-context"
-import { Headphones, Shield, BarChart3, Users, Loader2 } from "lucide-react"
+import { Headphones, Shield, BarChart3, Users, Loader2, PhoneCall } from "lucide-react"
 
 const roleInfo: Record<UserRole, { icon: React.ElementType; description: string }> = {
   agent: {
     icon: Headphones,
     description: "Handle conversations and customer requests",
+  },
+  call_agent: {
+    icon: PhoneCall,
+    description: "Handle inbound & outbound voice calls",
   },
   supervisor: {
     icon: Users,
@@ -44,7 +48,7 @@ export default function LoginPage() {
     setIsLoading(true)
     try {
       await login(email, password, selectedRole)
-      router.push("/inbox")
+      router.push(selectedRole === "call_agent" ? "/call-agent" : selectedRole === "agent" ? "/chat-agent" : "/inbox")
     } catch (error) {
       console.error("Login failed:", error)
     } finally {
@@ -56,7 +60,7 @@ export default function LoginPage() {
     setIsLoading(true)
     try {
       await login("sso@omnicare.com", "", selectedRole)
-      router.push("/inbox")
+      router.push(selectedRole === "call_agent" ? "/call-agent" : selectedRole === "agent" ? "/chat-agent" : "/inbox")
     } catch (error) {
       console.error("SSO login failed:", error)
     } finally {

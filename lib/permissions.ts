@@ -2,12 +2,21 @@ import type { UserRole } from "@/contexts/auth-context"
 
 export const rolePermissions: Record<UserRole, string[]> = {
   agent: [
-    "inbox:view",
-    "inbox:respond",
-    "conversations:view",
+    // Chat agents
     "conversations:respond",
     "handover:request",
     "knowledge-base:view",
+    "agent-desktop:view",
+    "chat-agent:view",
+    "call-agent:view", // allow agent to access call agent page for demo
+  ],
+  call_agent: [
+    // Voice agents
+    "conversations:respond",
+    "handover:request",
+    "knowledge-base:view",
+    "agent-desktop:view",
+    "call-agent:view",
   ],
   supervisor: [
     "inbox:view",
@@ -30,6 +39,7 @@ export const rolePermissions: Record<UserRole, string[]> = {
     "knowledge-base:view",
     "knowledge-base:edit",
     "workflows:view",
+    // Supervisors do NOT have access to agent desktop views
   ],
   admin: [
     "inbox:view",
@@ -75,6 +85,9 @@ export function hasPermission(role: UserRole, permission: string): boolean {
 export function canAccessRoute(role: UserRole, route: string): boolean {
   const routePermissions: Record<string, string[]> = {
     "/inbox": ["inbox:view", "inbox:view-readonly"],
+    "/agent-desktop": ["agent-desktop:view"],
+    "/chat-agent": ["chat-agent:view"],
+    "/call-agent": ["call-agent:view"],
     "/live-console": ["live-console:view"],
     "/analytics": ["analytics:view"],
     "/quality": ["quality:view"],

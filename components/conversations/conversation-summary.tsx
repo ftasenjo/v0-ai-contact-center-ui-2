@@ -173,3 +173,4 @@ function generateSummaryFromMessages(conversation: Conversation): string | null 
 
   return parts.join(" ")
 }
+

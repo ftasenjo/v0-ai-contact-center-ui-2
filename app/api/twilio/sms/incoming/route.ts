@@ -60,7 +60,15 @@ export async function POST(request: NextRequest) {
       // Log prominently so you can see it
       console.log('═══════════════════════════════════════');
       console.log('🔐 VERIFICATION CODE:', body);
+      console.log('🔐 VERIFICATION CODE:', body);
+      console.log('🔐 VERIFICATION CODE:', body);
       console.log('═══════════════════════════════════════');
+    }
+    
+    // ALWAYS log the body for verification codes (even if pattern doesn't match)
+    // Meta sometimes sends codes in different formats
+    if (body && body.length <= 20 && /\d/.test(body)) {
+      console.log('⚠️ Possible verification code (checking):', body);
     }
 
     // Store the message (optional - for verification code tracking)
@@ -123,3 +131,4 @@ export async function POST(request: NextRequest) {
     });
   }
 }
+

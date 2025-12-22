@@ -10,11 +10,13 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
   DropdownMenuCheckboxItem,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
+import { useAuth, type UserRole } from "@/contexts/auth-context"
 
 const channels = [
   { id: "all", label: "All Channels" },
@@ -49,8 +51,12 @@ const notifications = [
 ]
 
 export function AppHeader() {
+  const { user, switchRole } = useAuth()
   const [selectedChannels, setSelectedChannels] = useState<string[]>(["all"])
   const [slaStatus] = useState({ healthy: 45, warning: 8, breached: 2 })
+
+  // If user not loaded yet, render nothing (layout handles auth redirect)
+  if (!user) return null
 
   const toggleChannel = (channelId: string) => {
     if (channelId === "all") {
@@ -120,6 +126,30 @@ export function AppHeader() {
             </Badge>
           </div>
         </div>
+
+        {/* Demo Role Switcher */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2 bg-transparent">
+              <span className="text-sm capitalize">{user.role}</span>
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuLabel>Switch role (demo)</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {(["agent", "supervisor", "admin", "analyst"] as UserRole[]).map((role) => (
+              <DropdownMenuItem
+                key={role}
+                onClick={() => switchRole(role)}
+                className="capitalize"
+              >
+                {role}
+                {user.role === role && <span className="ml-auto text-xs text-muted-foreground">Current</span>}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Notifications */}
         <Popover>

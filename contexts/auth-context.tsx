@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, type ReactNode } from "react"
 
-export type UserRole = "agent" | "supervisor" | "admin" | "analyst"
+export type UserRole = "agent" | "call_agent" | "supervisor" | "admin" | "analyst"
 
 export interface User {
   id: string
@@ -30,6 +30,14 @@ const demoUsers: Record<UserRole, User> = {
     email: "sarah.chen@omnicare.com",
     role: "agent",
     avatar: "/professional-woman-avatar.png",
+    status: "online",
+  },
+  call_agent: {
+    id: "5",
+    name: "David Ruiz",
+    email: "david.ruiz@omnicare.com",
+    role: "call_agent",
+    avatar: "/professional-man-marcus.jpg",
     status: "online",
   },
   supervisor: {

@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
+import { useRouter } from "next/navigation"
+import { useAuth } from "@/contexts/auth-context"
 import { ConversationList } from "@/components/inbox/conversation-list"
 import { ConversationPanel } from "@/components/inbox/conversation-panel"
 import { QueueSidebar } from "@/components/inbox/queue-sidebar"
@@ -16,6 +18,16 @@ import {
 import { filterByHandlingStatus, getHandlingLabel, type HandlingStatus } from "@/lib/conversation-handling"
 
 export default function InboxPage() {
+  const router = useRouter()
+  const { user } = useAuth()
+  const role = user?.role
+
+  // Redirect agents to their agent desktop (they shouldn't see all conversations)
+  useEffect(() => {
+    if (role === "agent") {
+      router.push("/chat-agent") // Redirect to chat agent view
+    }
+  }, [role, router])
   const [selectedIndustry, setSelectedIndustry] = useState<Industry>("banking")
   const [selectedHandlingStatus, setSelectedHandlingStatus] = useState<HandlingStatus | 'all'>('all')
   const [conversations, setConversations] = useState<Conversation[]>([])

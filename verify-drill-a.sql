@@ -65,3 +65,4 @@ LEFT JOIN cc_admin_inbox_items i ON e.dedupe_key = i.dedupe_key
 WHERE e.event_type = 'fraud_case_created'
 ORDER BY e.created_at DESC
 LIMIT 5;
+

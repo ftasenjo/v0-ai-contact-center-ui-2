@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { AppSidebar } from "@/components/layout/app-sidebar"
 import { AppHeader } from "@/components/layout/app-header"
@@ -15,6 +15,10 @@ export default function DashboardLayout({
 }) {
   const { isAuthenticated } = useAuth()
   const router = useRouter()
+  const pathname = usePathname()
+
+  // Agent pages (chat-agent, call-agent) should render full-screen without sidebar/header
+  const isAgentPage = pathname?.startsWith("/chat-agent") || pathname?.startsWith("/call-agent")
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -26,6 +30,17 @@ export default function DashboardLayout({
     return null
   }
 
+  // Render agent pages full-screen (they have their own headers/layouts)
+  if (isAgentPage) {
+    return (
+      <div className="flex h-screen overflow-hidden bg-background">
+        <AppSidebar />
+        <main className="flex-1 overflow-hidden">{children}</main>
+      </div>
+    )
+  }
+
+  // Render other pages with sidebar and header
   return (
     <div className="flex h-screen overflow-hidden">
       <AppSidebar />

@@ -161,3 +161,4 @@ if (checks.failed.length === 0) {
   console.log('⚠️  Some checks failed. Please fix the issues above before deploying.\n')
   process.exit(1)
 }
+

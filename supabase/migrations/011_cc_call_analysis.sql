@@ -79,3 +79,4 @@ CREATE POLICY "service_role_all_access_call_analysis" ON cc_call_analysis
   FOR ALL TO service_role
   USING (true)
   WITH CHECK (true);
+

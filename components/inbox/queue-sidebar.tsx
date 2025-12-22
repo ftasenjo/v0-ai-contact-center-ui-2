@@ -180,7 +180,10 @@ export function QueueSidebar({
               )}
             >
               <span className="flex items-center gap-2">
-                <queue.icon className="h-4 w-4" />
+                {(() => {
+                  const Icon = queue.icon
+                  return <Icon className="h-4 w-4" />
+                })()}
                 {queue.name}
               </span>
               <Badge variant={selectedQueue === queue.id ? "secondary" : "outline"} className="text-xs">
@@ -216,7 +219,10 @@ export function QueueSidebar({
                   htmlFor={`channel-${channel.id}`}
                   className="flex items-center gap-2 text-sm cursor-pointer flex-1"
                 >
-                  <channel.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  {(() => {
+                    const Icon = channel.icon
+                    return <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                  })()}
                   {channel.label}
                   <span className="ml-auto text-muted-foreground text-xs">{channel.count}</span>
                 </Label>
@@ -289,7 +295,10 @@ export function QueueSidebar({
                   onCheckedChange={() => toggleFilter(selectedSentiments, setSelectedSentiments, sentiment.id)}
                 />
                 <Label htmlFor={`sentiment-${sentiment.id}`} className="flex items-center gap-2 text-sm cursor-pointer">
-                  <sentiment.icon className={cn("h-3.5 w-3.5", sentiment.color)} />
+                  {(() => {
+                    const Icon = sentiment.icon
+                    return <Icon className={cn("h-3.5 w-3.5", sentiment.color)} />
+                  })()}
                   {sentiment.label}
                 </Label>
               </div>

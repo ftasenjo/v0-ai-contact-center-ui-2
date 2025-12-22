@@ -58,3 +58,4 @@ export async function GET(
     return NextResponse.json({ error: e?.message || "Failed to fetch automation data" }, { status: 500 })
   }
 }
+

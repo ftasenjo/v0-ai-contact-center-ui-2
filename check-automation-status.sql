@@ -50,3 +50,4 @@ SELECT
   COUNT(*) as count
 FROM cc_admin_inbox_items
 WHERE status = 'open';
+

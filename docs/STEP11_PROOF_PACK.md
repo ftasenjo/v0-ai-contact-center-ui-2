@@ -236,3 +236,4 @@ curl -X POST http://localhost:3001/api/automation/checkers/daily-summary \
   -H "x-user-role: admin" \
   -H "Content-Type: application/json"
 ```
+

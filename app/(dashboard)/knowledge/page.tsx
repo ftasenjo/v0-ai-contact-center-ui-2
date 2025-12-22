@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Dialog,
   DialogContent,
@@ -299,7 +300,21 @@ export default function KnowledgePage() {
         <ScrollArea className="flex-1">
           <div className="p-6">
             {loading ? (
-              <div className="text-center py-8 text-muted-foreground">Loading knowledge base articles...</div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Card key={i} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 space-y-2">
+                        <Skeleton className="h-5 w-3/4" />
+                        <Skeleton className="h-4 w-1/2" />
+                        <Skeleton className="h-3 w-full" />
+                        <Skeleton className="h-3 w-5/6" />
+                      </div>
+                      <Skeleton className="h-6 w-16" />
+                    </div>
+                  </Card>
+                ))}
+              </div>
             ) : articles.length === 0 ? (
               <div className="text-center py-8 space-y-4">
                 <div className="text-muted-foreground">

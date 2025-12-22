@@ -161,3 +161,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: e?.message || "Failed to track action" }, { status: 500 })
   }
 }
+
