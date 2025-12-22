@@ -11,6 +11,9 @@ import { getTwilioClient } from '@/lib/twilio';
  * - Store SMS messages in the database
  */
 export async function POST(request: NextRequest) {
+  // Log immediately that webhook was called
+  console.log('🔔 SMS Webhook Called - Request received');
+  
   try {
     // Parse Twilio webhook payload (form-encoded)
     const formData = await request.formData();
@@ -20,7 +23,16 @@ export async function POST(request: NextRequest) {
     const messageSid = formData.get('MessageSid') as string;
     const numMedia = formData.get('NumMedia') as string || '0';
 
-    console.log('📱 Incoming SMS:', { from, to, body, messageSid });
+    console.log('📱 Incoming SMS:', { from, to, body, messageSid, messageSidLength: messageSid?.length });
+    console.log('📱 Full SMS Details:', {
+      from,
+      to,
+      body: body.substring(0, 100), // First 100 chars
+      bodyLength: body.length,
+      messageSid,
+      numMedia,
+      timestamp: new Date().toISOString(),
+    });
 
     // Extract media metadata if any
     const mediaUrls: string[] = [];
