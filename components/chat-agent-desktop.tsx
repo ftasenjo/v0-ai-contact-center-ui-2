@@ -256,7 +256,7 @@ export function ChatAgentDesktop({
     setMessages(activeConvo.messages)
     setShowVideoRequest(false)
     setShowScreenShareRequest(false)
-  }, [activeConversationId])
+  }, [activeConversationId, activeConvo.messages])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -662,7 +662,9 @@ export function ChatAgentDesktop({
                               alt="Sent media"
                               className="rounded-lg max-w-full h-auto"
                             />
-                            {msg.caption && <p className="text-sm leading-relaxed">{msg.caption}</p>}
+                            {(msg as any).caption && (
+                              <p className="text-sm leading-relaxed">{(msg as any).caption}</p>
+                            )}
                           </div>
                         )}
                       </div>

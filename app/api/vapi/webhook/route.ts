@@ -662,18 +662,6 @@ async function processVapiCallAnalysis(call: any, conversationId: string, twilio
   } catch (e: any) {
     throw new Error(`Failed to store call analysis: ${e?.message || 'Unknown error'}`);
   }
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Failed to store call analysis: ${response.status} ${errorText}`);
-  }
-
-  console.log('[vapi/webhook] ✅ Call analysis stored:', {
-    conversationId,
-    qualityScore,
-    sentiment: normalizedSentiment,
-    issueResolved,
-  });
 }
 
 /**

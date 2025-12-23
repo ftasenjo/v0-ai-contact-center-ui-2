@@ -27,7 +27,7 @@ const demoUsers: Record<UserRole, User> = {
   agent: {
     id: "1",
     name: "Sarah Chen",
-    email: "sarah.chen@omnicare.com",
+    email: "sarah.chen@majlisconnect.com",
     role: "agent",
     avatar: "/professional-woman-avatar.png",
     status: "online",
@@ -35,7 +35,7 @@ const demoUsers: Record<UserRole, User> = {
   call_agent: {
     id: "5",
     name: "David Ruiz",
-    email: "david.ruiz@omnicare.com",
+    email: "david.ruiz@majlisconnect.com",
     role: "call_agent",
     avatar: "/professional-man-marcus.jpg",
     status: "online",
@@ -43,7 +43,7 @@ const demoUsers: Record<UserRole, User> = {
   supervisor: {
     id: "2",
     name: "Michael Torres",
-    email: "michael.torres@omnicare.com",
+    email: "michael.torres@majlisconnect.com",
     role: "supervisor",
     avatar: "/professional-man-avatar.png",
     status: "online",
@@ -51,7 +51,7 @@ const demoUsers: Record<UserRole, User> = {
   admin: {
     id: "3",
     name: "Jessica Park",
-    email: "jessica.park@omnicare.com",
+    email: "jessica.park@majlisconnect.com",
     role: "admin",
     avatar: "/professional-woman-admin-avatar.jpg",
     status: "online",
@@ -59,7 +59,7 @@ const demoUsers: Record<UserRole, User> = {
   analyst: {
     id: "4",
     name: "David Kim",
-    email: "david.kim@omnicare.com",
+    email: "david.kim@majlisconnect.com",
     role: "analyst",
     avatar: "/professional-man-analyst-avatar.jpg",
     status: "online",

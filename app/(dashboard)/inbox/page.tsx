@@ -68,7 +68,7 @@ export default function InboxPage() {
   const channelCounts = useMemo(() => {
     const counts = { voice: 0, chat: 0, email: 0, whatsapp: 0 }
     allFetchedConversations.forEach(conv => {
-      if (counts.hasOwnProperty(conv.channel)) {
+      if (Object.prototype.hasOwnProperty.call(counts, conv.channel)) {
         counts[conv.channel as keyof typeof counts]++
       }
     })
@@ -98,7 +98,7 @@ export default function InboxPage() {
       }
       
       lang = lang || 'en';
-      if (counts.hasOwnProperty(lang)) {
+      if (Object.prototype.hasOwnProperty.call(counts, lang)) {
         counts[lang as keyof typeof counts]++
       }
     })

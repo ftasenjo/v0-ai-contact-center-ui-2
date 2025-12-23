@@ -120,8 +120,8 @@ function generateSummaryFromMessages(conversation: Conversation): string | null 
   }
 
   const messages = conversation.messages
-  const customerMessages = messages.filter((m) => m.type === "customer" || m.type === "user")
-  const agentMessages = messages.filter((m) => m.type !== "customer" && m.type !== "user")
+  const customerMessages = messages.filter((m) => m.type === "customer")
+  const agentMessages = messages.filter((m) => m.type !== "customer")
 
   if (customerMessages.length === 0) {
     return null

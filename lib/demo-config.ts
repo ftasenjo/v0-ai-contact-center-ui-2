@@ -11,7 +11,7 @@ export const DEMO_CONFIG = {
   
   // Demo credentials (for easy login during demos)
   demoCredentials: {
-    email: "demo@omnicare.com",
+    email: "demo@majlisconnect.com",
     password: "demo123",
     role: "admin" as const,
   },

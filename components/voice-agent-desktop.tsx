@@ -16,7 +16,7 @@ import { motion } from "framer-motion"
 
 interface VoiceAgentDesktopProps {
   onEndCall: () => void
-  onSwitchToChat: () => void
+  onSwitchToChat?: () => void
   agentStatus: "ready" | "busy" | "break" | "offline"
   onStatusChange: (status: "ready" | "busy" | "break" | "offline") => void
   autoAccept: boolean
@@ -48,6 +48,8 @@ export function VoiceAgentDesktop({
   const [showSMSModal, setShowSMSModal] = useState(false)
   const [showMediaModal, setShowMediaModal] = useState(false)
   const [copiedDNI, setCopiedDNI] = useState(false)
+
+  const handleSwitchToChat = onSwitchToChat || (() => {})
   const [copiedProductId, setCopiedProductId] = useState(false)
   const [showPulse, setShowPulse] = useState(false)
 
@@ -63,7 +65,7 @@ export function VoiceAgentDesktop({
       setShowPulse(true)
       setTimeout(() => setShowPulse(false), 2000)
     }
-  }, [customerData])
+  }, [agentStatus])
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -105,7 +107,7 @@ export function VoiceAgentDesktop({
         status={status}
         callDuration={formatTime(callDuration)}
         onEndCall={onEndCall}
-        onSwitchToChat={onSwitchToChat} // Call agents shouldn't switch to chat, but keeping for compatibility
+        onSwitchToChat={handleSwitchToChat} // optional
         agentStatus={agentStatus}
         onStatusChange={onStatusChange}
         callsInQueue={callsInQueue || 0}

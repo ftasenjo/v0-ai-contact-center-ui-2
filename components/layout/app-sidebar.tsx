@@ -6,7 +6,6 @@ import {
   Inbox,
   BarChart3,
   Settings,
-  Headphones,
   PhoneCall,
   Award,
   Users,
@@ -18,11 +17,14 @@ import {
   Bell,
   Monitor,
   MessageSquare,
+  GitBranch,
+  PlugZap,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAuth, type UserRole } from "@/contexts/auth-context"
 import { canAccessRoute } from "@/lib/permissions"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { MajlisConnectLogo } from "@/components/brand/majlis-connect-logo"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,6 +47,8 @@ const baseNavigation = [
   { name: "Reports", href: "/reports", icon: FileText },
   { name: "Knowledge", href: "/knowledge", icon: BookOpen },
   { name: "Workflows", href: "/workflows", icon: Zap },
+  { name: "Agent Builder", href: "/agent-builder", icon: GitBranch },
+  { name: "Integrations", href: "/integrations", icon: PlugZap },
   { name: "Automation", href: "/automation", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings },
 ]
@@ -82,9 +86,9 @@ export function AppSidebar() {
       <div className="h-16 flex items-center px-4 border-b border-sidebar-border">
         <Link href="/inbox" className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-sidebar-primary flex items-center justify-center">
-            <Headphones className="w-5 h-5 text-sidebar-primary-foreground" />
+            <MajlisConnectLogo className="w-5 h-5 text-sidebar-primary-foreground" />
           </div>
-          <span className="font-semibold text-lg">OmniCare</span>
+          <span className="font-semibold text-lg">Majlis Connect</span>
         </Link>
       </div>
 
@@ -97,6 +101,7 @@ export function AppSidebar() {
             : baseNavigation).map((item) => {
           const isActive = pathname.startsWith(item.href)
           const hasAccess = canAccessRoute(user.role, item.href)
+          const Icon = item.icon
 
           if (!hasAccess) return null
 
@@ -111,7 +116,7 @@ export function AppSidebar() {
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
               )}
             >
-              <item.icon className="w-5 h-5" />
+              <Icon className="w-5 h-5" />
               {item.name}
               {item.name === "Inbox" && user.role !== "agent" && (
                 <Badge

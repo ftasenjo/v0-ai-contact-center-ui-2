@@ -65,7 +65,7 @@ The SMS webhook will automatically detect and log verification codes. Here's how
 ### Option C: Supabase Database
 
 1. **Go to Supabase Dashboard**: https://supabase.com
-2. **Navigate to**: Table Editor → `cc_channel_messages`
+2. **Navigate to**: Table Editor → `cc_messages`
 3. **Filter by**: `channel = 'sms'`
 4. **Sort by**: `created_at DESC` (newest first)
 5. **Look for** the message body containing the code

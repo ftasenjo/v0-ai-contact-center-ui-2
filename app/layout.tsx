@@ -8,8 +8,14 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "OmniCare Contact Center",
-  description: "AI-Powered Omnichannel Contact Center Solution",
+  title: {
+    default: "Majlis Connect",
+    template: "%s | Majlis Connect",
+  },
+  description: "AI-powered omnichannel customer engagement platform.",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+  },
   generator: "v0.app",
 }
 

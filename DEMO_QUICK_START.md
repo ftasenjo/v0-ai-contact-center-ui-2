@@ -56,7 +56,7 @@ npm run dev
 Visit: http://localhost:3000
 
 Login with:
-- Email: `demo@omnicare.com`
+- Email: `demo@majlisconnect.com`
 - Password: `demo123`
 - Role: `admin`
 

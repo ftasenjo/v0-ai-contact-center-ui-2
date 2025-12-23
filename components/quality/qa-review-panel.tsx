@@ -292,7 +292,7 @@ export function QAReviewPanel({ review }: QAReviewPanelProps) {
                     {
                       speaker: "Agent",
                       time: "00:00",
-                      text: "Thank you for calling OmniCare support, this is Sarah speaking. How may I assist you today?",
+                      text: "Thank you for calling Majlis Connect support, this is Sarah speaking. How may I assist you today?",
                     },
                     {
                       speaker: "Customer",

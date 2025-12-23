@@ -39,6 +39,8 @@ export const rolePermissions: Record<UserRole, string[]> = {
     "knowledge-base:view",
     "knowledge-base:edit",
     "workflows:view",
+    "agent-builder:view",
+    "integrations:manage",
     // Supervisors do NOT have access to agent desktop views
   ],
   admin: [
@@ -66,6 +68,8 @@ export const rolePermissions: Record<UserRole, string[]> = {
     "automation:manage",
     "quality:view",
     "live-console:view",
+    "agent-builder:view",
+    "integrations:manage",
   ],
   analyst: [
     "analytics:view",
@@ -96,6 +100,8 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
     "/knowledge": ["knowledge-base:view"],
     "/workflows": ["workflows:view"],
     "/automation": ["automation:manage"],
+    "/agent-builder": ["agent-builder:view"],
+    "/integrations": ["integrations:manage"],
   }
 
   const requiredPermissions = routePermissions[route]

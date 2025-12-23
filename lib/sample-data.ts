@@ -366,7 +366,7 @@ export const sampleAgents: Agent[] = [
   {
     id: "agent-001",
     name: "Sarah Chen",
-    email: "sarah.chen@omnicare.com",
+    email: "sarah.chen@majlisconnect.com",
     avatar: "/professional-woman-sarah-agent.jpg",
     status: "online",
     role: "agent",
@@ -377,7 +377,7 @@ export const sampleAgents: Agent[] = [
   {
     id: "agent-002",
     name: "David Park",
-    email: "david.park@omnicare.com",
+    email: "david.park@majlisconnect.com",
     avatar: "/professional-man-david-agent.jpg",
     status: "busy",
     role: "agent",
@@ -388,7 +388,7 @@ export const sampleAgents: Agent[] = [
   {
     id: "agent-003",
     name: "Maria Garcia",
-    email: "maria.garcia@omnicare.com",
+    email: "maria.garcia@majlisconnect.com",
     avatar: "/professional-woman-maria-agent.jpg",
     status: "online",
     role: "agent",
@@ -399,7 +399,7 @@ export const sampleAgents: Agent[] = [
   {
     id: "agent-004",
     name: "Alex Thompson",
-    email: "alex.thompson@omnicare.com",
+    email: "alex.thompson@majlisconnect.com",
     avatar: "/professional-person-alex-agent.jpg",
     status: "away",
     role: "agent",

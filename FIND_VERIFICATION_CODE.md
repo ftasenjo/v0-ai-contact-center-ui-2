@@ -43,10 +43,10 @@ curl -X GET "https://api.twilio.com/2010-04-01/Accounts/YOUR_ACCOUNT_SID/Message
 ## ✅ Method 4: Check Supabase (If Webhook Fired)
 
 1. **Go to Supabase Dashboard**
-2. **Table Editor** → `cc_channel_messages`
+2. **Table Editor** → `cc_messages`
 3. **Filter**: `channel = 'sms'`
 4. **Sort by**: `created_at DESC`
-5. **Look for** the most recent SMS - code should be in `body` field
+5. **Look for** the most recent SMS - code should be in `body_text` field
 
 ## 🎯 Most Likely Location
 

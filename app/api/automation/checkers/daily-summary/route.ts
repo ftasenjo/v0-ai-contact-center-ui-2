@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     const result = await generateDailyOperationalSummary({ date })
 
-    return NextResponse.json({ success: true, ...result })
+    return NextResponse.json({ ...result, success: true })
   } catch (e: any) {
     return NextResponse.json(
       { success: false, error: "Failed to generate daily summary", message: e?.message },

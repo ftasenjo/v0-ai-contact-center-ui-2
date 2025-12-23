@@ -79,9 +79,13 @@ export async function GET(request: NextRequest) {
 
       // Calculate sentiment scores
       const sentimentScores = [
-        ...agentConversations.filter((c) => c.sentiment_score).map((c) => c.sentiment_score || 0),
-        ...agentCalls.filter((c) => c.sentiment_score).map((c) => c.sentiment_score || 0),
-      ]
+        ...agentConversations
+          .map((c: any) => ("sentiment_score" in c ? c.sentiment_score : null))
+          .filter((s: any) => typeof s === "number" && !Number.isNaN(s)),
+        ...agentCalls
+          .map((c: any) => c.sentiment_score ?? null)
+          .filter((s: any) => typeof s === "number" && !Number.isNaN(s)),
+      ] as number[]
       const avgSentimentScore =
         sentimentScores.length > 0
           ? sentimentScores.reduce((sum, s) => sum + s, 0) / sentimentScores.length

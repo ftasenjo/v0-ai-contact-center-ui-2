@@ -163,6 +163,30 @@ async function sendWhatsApp(job: OutboundJobRow, body: string) {
   );
 }
 
+async function sendSms(job: OutboundJobRow, body: string) {
+  if (
+    process.env.OUTBOUND_PROVIDER_MODE === 'mock' ||
+    !process.env.TWILIO_ACCOUNT_SID ||
+    !process.env.TWILIO_AUTH_TOKEN
+  ) {
+    return { sid: `mock-sms-${job.id}-${Date.now()}`, status: 'sent' };
+  }
+  const twilio = getTwilioClient();
+  const from = process.env.TWILIO_PHONE_NUMBER;
+  if (!from) throw new Error('Missing TWILIO_PHONE_NUMBER');
+  const to = job.target_address; // should be normalized to +E164
+
+  return callToolWithAudit(
+    'send_outbound_sms',
+    { to, from, job_id: job.id, body_preview: body.slice(0, 80) },
+    async () => {
+      const msg = await twilio.messages.create({ from, to, body });
+      return { sid: msg.sid, status: msg.status };
+    },
+    { actorType: 'system', bankCustomerId: job.bank_customer_id || undefined, context: 'outbound' }
+  );
+}
+
 async function sendEmail(job: OutboundJobRow, subject: string, text: string, html?: string) {
   if (process.env.OUTBOUND_PROVIDER_MODE === 'mock') {
     return { queued: true, provider: 'mock' };
@@ -465,6 +489,17 @@ export async function processOutboundJob(job: OutboundJobRow, now: Date): Promis
           at: now,
           outcomeCode: 'success_unverified_info_only',
         });
+      } else if (job.channel === 'sms') {
+        const res = await sendSms(job, verifyText);
+        await insertAttempt({
+          job,
+          attemptNumber,
+          status: 'sent',
+          provider: 'twilio',
+          providerMessageId: (res as any)?.sid ?? null,
+          at: now,
+          outcomeCode: 'success_unverified_info_only',
+        });
       } else {
         throw new Error(`Unsupported channel: ${job.channel}`);
       }
@@ -543,6 +578,18 @@ export async function processOutboundJob(job: OutboundJobRow, now: Date): Promis
         providerCallSid: (res as any)?.callSid ?? null,
         at: now,
         outcomeCode: job.payload_json?.verification_state === 'verified' ? 'success_verified' : 'success_unverified_info_only',
+      });
+    } else if (job.channel === 'sms') {
+      const res = await sendSms(job, text);
+      await insertAttempt({
+        job,
+        attemptNumber,
+        status: 'sent',
+        provider: 'twilio',
+        providerMessageId: (res as any)?.sid ?? null,
+        at: now,
+        outcomeCode:
+          job.payload_json?.verification_state === 'verified' ? 'success_verified' : 'success_unverified_info_only',
       });
     } else {
       throw new Error(`Unsupported channel: ${job.channel}`);

@@ -64,7 +64,7 @@ Then configure in Twilio Console:
 
 **Web Demo:**
 - Share: `https://your-project.vercel.app`
-- Login: `demo@omnicare.com` / `demo123` / `admin`
+- Login: `demo@majlisconnect.com` / `demo123` / `admin`
 
 ### Step 5: Monitor
 

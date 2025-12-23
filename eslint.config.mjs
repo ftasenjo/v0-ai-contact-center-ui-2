@@ -1,6 +1,7 @@
 import js from "@eslint/js";
 import globals from "globals";
 import tseslint from "typescript-eslint";
+import reactHooks from "eslint-plugin-react-hooks";
 
 export default [
   {
@@ -26,6 +27,9 @@ export default [
         ...globals.node,
       },
     },
+    plugins: {
+      "react-hooks": reactHooks,
+    },
     rules: {
       // CI health gate: keep lint lightweight and non-blocking.
       // Type-safety is enforced via `pnpm run typecheck`.
@@ -37,6 +41,10 @@ export default [
       "no-useless-escape": "off",
       "prefer-const": "off",
       "no-misleading-character-class": "off",
+
+      // React hooks correctness (safe gate)
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
 ];

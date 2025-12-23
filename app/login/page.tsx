@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { useAuth, type UserRole } from "@/contexts/auth-context"
-import { Headphones, Shield, BarChart3, Users, Loader2, PhoneCall } from "lucide-react"
+import { Shield, BarChart3, Users, Loader2, PhoneCall, Headphones } from "lucide-react"
+import { MajlisConnectLogo } from "@/components/brand/majlis-connect-logo"
 
 const roleInfo: Record<UserRole, { icon: React.ElementType; description: string }> = {
   agent: {
@@ -36,7 +37,7 @@ const roleInfo: Record<UserRole, { icon: React.ElementType; description: string 
 }
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("demo@omnicare.com")
+  const [email, setEmail] = useState("demo@majlisconnect.com")
   const [password, setPassword] = useState("demo123")
   const [selectedRole, setSelectedRole] = useState<UserRole>("agent")
   const [isLoading, setIsLoading] = useState(false)
@@ -59,7 +60,7 @@ export default function LoginPage() {
   const handleSSO = async () => {
     setIsLoading(true)
     try {
-      await login("sso@omnicare.com", "", selectedRole)
+      await login("sso@majlisconnect.com", "", selectedRole)
       router.push(selectedRole === "call_agent" ? "/call-agent" : selectedRole === "agent" ? "/chat-agent" : "/inbox")
     } catch (error) {
       console.error("SSO login failed:", error)
@@ -75,11 +76,11 @@ export default function LoginPage() {
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center gap-2">
             <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center">
-              <Headphones className="w-6 h-6 text-primary-foreground" />
+              <MajlisConnectLogo className="w-6 h-6 text-primary-foreground" />
             </div>
-            <span className="text-2xl font-bold text-foreground">OmniCare</span>
+            <span className="text-2xl font-bold text-foreground">Majlis Connect</span>
           </div>
-          <p className="text-muted-foreground">AI-Powered Contact Center</p>
+          <p className="text-muted-foreground">AI-powered omnichannel engagement</p>
         </div>
 
         <Card className="border-border/50 shadow-lg">

@@ -360,19 +360,19 @@ export default function AnalyticsPage() {
               {
                 name: "Weekly Performance Summary",
                 schedule: "Every Monday, 9:00 AM",
-                recipients: "team-leads@omnicare.com",
+                recipients: "team-leads@majlisconnect.com",
                 lastSent: "Dec 9, 2024",
               },
               {
                 name: "Daily SLA Report",
                 schedule: "Daily, 6:00 PM",
-                recipients: "ops@omnicare.com",
+                recipients: "ops@majlisconnect.com",
                 lastSent: "Dec 12, 2024",
               },
               {
                 name: "Monthly Executive Dashboard",
                 schedule: "1st of month, 8:00 AM",
-                recipients: "executives@omnicare.com",
+                recipients: "executives@majlisconnect.com",
                 lastSent: "Dec 1, 2024",
               },
             ].map((report) => (

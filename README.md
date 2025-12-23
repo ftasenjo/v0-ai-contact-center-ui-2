@@ -1,4 +1,4 @@
-# AI Contact Center UI
+# Majlis Connect
 
 *Automatically synced with your [v0.app](https://v0.app) deployments*
 
@@ -7,7 +7,7 @@
 
 ## Overview
 
-AI-powered contact center solution with multi-channel communication support. This repository will stay in sync with your deployed chats on [v0.app](https://v0.app).
+AI-powered omnichannel customer engagement platform. This repository will stay in sync with your deployed chats on [v0.app](https://v0.app).
 Any changes you make to your deployed app will be automatically pushed to this repository from [v0.app](https://v0.app).
 
 ## Integrations

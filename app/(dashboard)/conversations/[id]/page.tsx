@@ -256,7 +256,7 @@ export default function ConversationDetailPage() {
                         </div>
                         <div>
                           <div className="text-xs text-muted-foreground mb-1">Status</div>
-                          <Badge variant={conversation.status === "open" ? "default" : "secondary"}>
+                          <Badge variant={conversation.status === "active" ? "default" : "secondary"}>
                             {conversation.status}
                           </Badge>
                         </div>
@@ -475,13 +475,13 @@ export default function ConversationDetailPage() {
                           <div>
                             <div className="text-xs text-muted-foreground mb-1">Customer Messages</div>
                             <div className="text-2xl font-bold">
-                              {conversation.messages.filter((m) => m.type === "customer" || m.type === "user").length}
+                              {conversation.messages.filter((m) => m.type === "customer").length}
                             </div>
                           </div>
                           <div>
                             <div className="text-xs text-muted-foreground mb-1">Agent/AI Messages</div>
                             <div className="text-2xl font-bold">
-                              {conversation.messages.filter((m) => m.type !== "customer" && m.type !== "user").length}
+                              {conversation.messages.filter((m) => m.type !== "customer").length}
                             </div>
                           </div>
                           <div>
@@ -518,11 +518,11 @@ export default function ConversationDetailPage() {
                             conversation.messages.map((msg, idx) => (
                               <div
                                 key={msg.id || idx}
-                                className={`flex gap-3 ${msg.type === "customer" || msg.type === "user" ? "flex-row" : "flex-row-reverse"}`}
+                                className={`flex gap-3 ${msg.type === "customer" ? "flex-row" : "flex-row-reverse"}`}
                               >
                                 <Avatar className="h-8 w-8 shrink-0">
                                   <AvatarFallback>
-                                    {msg.type === "customer" || msg.type === "user" ? (
+                                    {msg.type === "customer" ? (
                                       <User className="h-4 w-4" />
                                     ) : (
                                       <MessageSquare className="h-4 w-4" />
@@ -532,7 +532,7 @@ export default function ConversationDetailPage() {
                                 <div className="flex-1 min-w-0">
                                   <div
                                     className={`rounded-lg p-3 ${
-                                      msg.type === "customer" || msg.type === "user"
+                                      msg.type === "customer"
                                         ? "bg-muted"
                                         : "bg-primary text-primary-foreground"
                                     }`}
@@ -541,7 +541,7 @@ export default function ConversationDetailPage() {
                                     <div className="flex items-center gap-2 mt-2 flex-wrap">
                                       <div
                                         className={`text-xs ${
-                                          msg.type === "customer" || msg.type === "user"
+                                          msg.type === "customer"
                                             ? "text-muted-foreground"
                                             : "text-primary-foreground/70"
                                         }`}

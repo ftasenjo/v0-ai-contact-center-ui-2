@@ -374,7 +374,6 @@ export default function AutomationCenterPage() {
         </TabsContent>
 
         <TabsContent value="events" className="mt-4">
-          {console.log(`[AutomationCenter] Rendering events tab: tab=${tab}, events.length=${events.length}, filteredEvents.length=${filteredEvents.length}`)}
           {events.length > 0 && (
             <div className="mb-4 p-3 bg-muted/30 rounded-lg text-sm">
               <div className="font-medium mb-1">Event Summary</div>

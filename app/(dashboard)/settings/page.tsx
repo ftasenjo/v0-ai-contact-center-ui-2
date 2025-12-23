@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -45,6 +45,27 @@ import {
   Mail,
   Hash,
 } from "lucide-react"
+
+type TwilioConnectivityStatus = {
+  success: boolean
+  env: Record<string, boolean>
+  webhooks: Record<string, string>
+  metaVerification: {
+    dbEnabled: boolean
+    error?: string
+    recentCodes: string[]
+    recentSms: Array<{
+      id: string
+      created_at: string
+      from_address: string | null
+      to_address: string | null
+      body_preview: string
+      provider: string | null
+      provider_message_id: string | null
+      codes: string[]
+    }>
+  }
+}
 
 const teamMembers = [
   {
@@ -119,7 +140,7 @@ const apiKeys = [
 const webhooks = [
   {
     id: 1,
-    url: "https://api.company.com/webhooks/omnicare",
+    url: "https://api.company.com/webhooks/majlis-connect",
     events: ["conversation.created", "conversation.resolved"],
     status: "active",
   },
@@ -132,6 +153,45 @@ export default function SettingsPage() {
   const [escalationThreshold, setEscalationThreshold] = useState([3])
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState("ai")
+
+  const [twilioStatus, setTwilioStatus] = useState<TwilioConnectivityStatus | null>(null)
+  const [twilioLoading, setTwilioLoading] = useState(false)
+  const [twilioError, setTwilioError] = useState<string | null>(null)
+
+  const refreshTwilioStatus = async () => {
+    setTwilioLoading(true)
+    setTwilioError(null)
+    try {
+      const res = await fetch("/api/connectivity/twilio")
+      const json = (await res.json().catch(() => null)) as TwilioConnectivityStatus | null
+      if (!res.ok || !json?.success) {
+        setTwilioError(`Failed to load Twilio connectivity (HTTP ${res.status})`)
+        setTwilioStatus(null)
+        return
+      }
+      setTwilioStatus(json)
+    } catch (e: any) {
+      setTwilioError(e?.message || "Failed to load Twilio connectivity")
+      setTwilioStatus(null)
+    } finally {
+      setTwilioLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === "channels") {
+      refreshTwilioStatus()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
+
+  const copyToClipboard = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+    } catch {
+      // no-op
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -179,7 +239,7 @@ export default function SettingsPage() {
               <div className="grid gap-6 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label>AI Persona Name</Label>
-                  <Input defaultValue="OmniCare Assistant" />
+                  <Input defaultValue="Majlis Connect Assistant" />
                 </div>
                 <div className="space-y-2">
                   <Label>Default Language</Label>
@@ -202,7 +262,7 @@ export default function SettingsPage() {
                 <Label>System Prompt</Label>
                 <Textarea
                   className="min-h-[120px]"
-                  defaultValue="You are OmniCare Assistant, a helpful and professional customer service AI. Always be polite, empathetic, and solution-oriented. If you cannot resolve an issue, offer to connect the customer with a human agent."
+                  defaultValue="You are Majlis Connect Assistant, a helpful and professional customer service AI. Always be polite, empathetic, and solution-oriented. If you cannot resolve an issue, offer to connect the customer with a human agent."
                 />
               </div>
 
@@ -494,6 +554,165 @@ export default function SettingsPage() {
 
         {/* Channels Tab */}
         <TabsContent value="channels" className="mt-6 space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Twilio + Meta Connectivity</CardTitle>
+                  <CardDescription>
+                    Confirm webhook URLs, environment configuration, and find Meta verification codes (sent via SMS).
+                  </CardDescription>
+                </div>
+                <Button variant="outline" className="gap-2 bg-transparent" onClick={refreshTwilioStatus} disabled={twilioLoading}>
+                  <RotateCcw className={`h-4 w-4 ${twilioLoading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {twilioError ? (
+                <div className="text-sm text-destructive">{twilioError}</div>
+              ) : null}
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg border p-4">
+                  <div className="font-medium">Environment</div>
+                  <div className="text-sm text-muted-foreground mt-1">Server-side variables (presence only)</div>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {twilioStatus ? (
+                      Object.entries(twilioStatus.env).map(([k, v]) => (
+                        <div key={k} className="flex items-center justify-between gap-3">
+                          <span className="font-mono">{k}</span>
+                          <Badge
+                            variant="outline"
+                            className={v ? "bg-emerald-500/10 text-emerald-600" : "bg-muted text-muted-foreground"}
+                          >
+                            {v ? "Set" : "Missing"}
+                          </Badge>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-muted-foreground">{twilioLoading ? "Loading…" : "Not loaded yet"}</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-lg border p-4">
+                  <div className="font-medium">Webhook URLs</div>
+                  <div className="text-sm text-muted-foreground mt-1">Paste these into Twilio Console</div>
+                  <div className="mt-3 space-y-2 text-sm">
+                    {twilioStatus ? (
+                      Object.entries(twilioStatus.webhooks).map(([k, url]) => (
+                        <div key={k} className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-xs text-muted-foreground">{k.replaceAll("_", " ")}</div>
+                            <div className="font-mono text-xs break-all">{url}</div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="shrink-0"
+                            onClick={() => copyToClipboard(url)}
+                            aria-label={`Copy ${k} URL`}
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-sm text-muted-foreground">{twilioLoading ? "Loading…" : "Not loaded yet"}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium">Meta verification codes (SMS)</div>
+                    <div className="text-sm text-muted-foreground">
+                      When you click “Send code” in WhatsApp Manager, the SMS lands on your Twilio number. We detect 4–8 digit
+                      tokens from recent inbound SMS.
+                    </div>
+                  </div>
+                  {twilioStatus?.metaVerification?.recentCodes?.length ? (
+                    <Button
+                      variant="outline"
+                      className="gap-2 bg-transparent shrink-0"
+                      onClick={() => copyToClipboard(twilioStatus.metaVerification.recentCodes[0])}
+                    >
+                      <Copy className="h-4 w-4" />
+                      Copy latest
+                    </Button>
+                  ) : null}
+                </div>
+
+                {twilioStatus ? (
+                  <div className="mt-3 space-y-3">
+                    {!twilioStatus.metaVerification.dbEnabled ? (
+                      <div className="text-sm text-muted-foreground">
+                        Database lookup disabled (missing Supabase server credentials). You can still use Vercel logs to find the
+                        code.
+                      </div>
+                    ) : twilioStatus.metaVerification.error ? (
+                      <div className="text-sm text-muted-foreground">
+                        Couldn’t query SMS messages: <span className="font-mono">{twilioStatus.metaVerification.error}</span>
+                      </div>
+                    ) : twilioStatus.metaVerification.recentCodes.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">No verification-like codes found in the last 25 SMS.</div>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {twilioStatus.metaVerification.recentCodes.map((c) => (
+                          <Button key={c} variant="outline" className="gap-2 bg-transparent" onClick={() => copyToClipboard(c)}>
+                            <span className="font-mono">{c}</span>
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+
+                    {twilioStatus.metaVerification.recentSms?.length ? (
+                      <div className="pt-2">
+                        <div className="text-xs text-muted-foreground mb-2">Recent SMS (masked)</div>
+                        <div className="space-y-2">
+                          {twilioStatus.metaVerification.recentSms.slice(0, 8).map((m) => (
+                            <div key={m.id} className="rounded-lg bg-muted/30 p-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-xs text-muted-foreground font-mono">
+                                  {m.from_address} → {m.to_address}
+                                </div>
+                                <div className="text-xs text-muted-foreground">{new Date(m.created_at).toLocaleString()}</div>
+                              </div>
+                              <div className="text-sm mt-2">{m.body_preview}</div>
+                              {m.codes?.length ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {m.codes.map((c) => (
+                                    <Button
+                                      key={c}
+                                      size="sm"
+                                      variant="outline"
+                                      className="gap-2 bg-transparent"
+                                      onClick={() => copyToClipboard(c)}
+                                    >
+                                      <span className="font-mono">{c}</span>
+                                      <Copy className="h-3 w-3" />
+                                    </Button>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-3 text-sm text-muted-foreground">{twilioLoading ? "Loading…" : "Not loaded yet"}</div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <div className="grid gap-6 md:grid-cols-2">
             <Card>
               <CardHeader>

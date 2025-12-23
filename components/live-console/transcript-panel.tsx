@@ -120,7 +120,6 @@ export function TranscriptPanel({ call }: TranscriptPanelProps) {
       cancelled = true
       if (interval) clearInterval(interval)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [call.id, call.callSid, call.status])
 
   // Auto-scroll to bottom
